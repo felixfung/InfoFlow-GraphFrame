@@ -6,6 +6,12 @@ sealed case class Network
   graph: GraphFrame, // nodes: modules, edges: transition probability w/o tele
   codelength: Double // information theoretic entropy
 )
+{
+  def localCheckpoint = {
+    graph.vertices.localCheckpoint
+    graph.edges.localCheckpoint
+  }
+}
 
 object Network
 {
@@ -19,7 +25,7 @@ object Network
     // filter away self connections
     graph.edges = graph.edges.filter( "from != to" )
 
-    val nodeNumber: Long = graph.vertices.count
+    val nodeNumber: Long = graph.vertices.groupBy.count
 
     // get PageRank ergodic frequency for each node
     val prob = graph.pageRank.resetProbability(1-tele).tol(0.01).run
@@ -40,7 +46,7 @@ object Network
     // the merging operation is symmetric towards the two modules
     // identify the merge operation by
     // (smaller module index,bigger module index)
-    val iWj = prob.vertices.join(
+    val edges = prob.vertices.join(
       graph.edges, prob("idx") === graph.edges("from")
     )
     .drop("idx") // remove duplicate index
@@ -53,12 +59,8 @@ object Network
     .groupBy( "idx1", "idx2" ).groupBy.sum("weight")
 
     // calculate current code length
-    val codeLength: Double = {
-      val qi_sum = modules.groupBy.sum("exitq")
-      val ergodicFreqSum = modules.groupBy.sum("prob")
-      MergeAlgo.calCodeLength( qi_sum, ergodicFreqSum, modules )
-    }
+    val codeLength: Double = calCodeLength(modules)
   }
 
-  Network( tele, nodeNumber, GraphFrame(modules,iWj), codeLength )
+  Network( tele, nodeNumber, GraphFrame(modules,edges), codeLength )
 }
