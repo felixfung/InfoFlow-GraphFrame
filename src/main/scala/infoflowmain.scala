@@ -2,6 +2,11 @@ import org.apache.spark.SparkContext
 import org.apache.spark.SparkContext._
 import org.apache.spark.SparkConf
 
+import org.apache.spark.sql
+import org.apache.spark.sql._
+import org.apache.spark.sql.DataFrame
+import org.graphframes._
+
 object InfoFlowMain {
   /***************************************************************************
    * Main function
@@ -26,9 +31,8 @@ object InfoFlowMain {
     val config = new Config(configFileName)
 
     // initialize parameters from config file
-    val pajekFile = config.pajekFile
-    val dampingFactor = config.dampingFactor
-    val mergeAlgo: MergeAlgo = MergeAlgo.choose( config.mergeAlgo )
+    val graphFile = config.graphFile
+    val merge: MergeAlgo = MergeAlgo.choose( config.mergeAlgo )
     val logFile = new LogFile(
       config.logDir,
       config.logWriteLog, config.rddText,
@@ -37,7 +41,7 @@ object InfoFlowMain {
     )
 
   /***************************************************************************
-   * Initialize Spark Context
+   * Initialize Spark Context and SQL Context
    ***************************************************************************/
     val conf = new SparkConf()
       .setAppName("InfoFlow")
@@ -45,19 +49,20 @@ object InfoFlowMain {
     val sc = new SparkContext(conf)
     sc.setLogLevel("OFF")
 
+    val sqlContext = new org.apache.spark.sql.SQLContext(sc)
+
   /***************************************************************************
-   * read pajek file and solve
+   * read file and solve
    ***************************************************************************/
-    val pajek = new PajekFile(sc,pajekFile)
-    val nodes = new Nodes(pajek,dampingFactor,1e-3)
-    val initPartition = Partition.init(nodes)
-    val finalPartition = mergeAlgo(initPartition,logFile)
+    val graphFile = new GraphFile.openFile( sc, sqlContext, pajekFile )
+    val net0 = graphFile.network
+    val (net1,partition) = merge( net0, logFile )
 
   /***************************************************************************
    * Output
    ***************************************************************************/
     if( !logFile.logSteps )
-      logFile.saveJSon( finalPartition, "graph.json", false )
+      logFile.save( net1, false )
 
   /***************************************************************************
    * Stop Spark Context
