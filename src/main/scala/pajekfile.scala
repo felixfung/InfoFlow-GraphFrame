@@ -69,7 +69,12 @@ object PajekFile
   }
 }
 
-sealed class PajekFile( sc: SparkContext, val filename: String )
+// one day rewrite with sequential code (no RDD),
+// then straight to dataframe and graphframe
+// to get rid of sparkcontext dependency
+// and pajekfile is inherently sequential anyway
+// so that only local file is possible
+sealed class PajekFile( sc: SparkContext, sqlc: SQLContext, val filename: String )
 {
 
   /***************************************************************************
@@ -78,19 +83,20 @@ sealed class PajekFile( sc: SparkContext, val filename: String )
    * (only the edge weights are used, for PageRank calculations)
    * the nodal weights will not be read
    ***************************************************************************/
-  val(
-    n         : Long,                    // number of vertices
-    names     : RDD[(Long,String)],      // names of nodes
-    sparseMat : RDD[(Long,(Long,Double))] // sparse matrix
-  ) = try {
+  val network = {
+    val(
+      n         : Long,                    // number of vertices
+      names     : RDD[(Long,String)],      // names of nodes
+      sparseMat : RDD[(Long,(Long,Double))] // sparse matrix
+    ) = try {
 
   /***************************************************************************
    * Read raw file, and file aligned with line index
    ***************************************************************************/
 
-    val rawFile = sc.textFile(filename)
-    val linedFile = rawFile.zipWithIndex
-    linedFile.cache
+      val rawFile = sc.textFile(filename)
+      val linedFile = rawFile.zipWithIndex
+      linedFile.cache
 
   /***************************************************************************
    * Grab section declare lines, which begin with a '*'
@@ -101,200 +107,204 @@ sealed class PajekFile( sc: SparkContext, val filename: String )
    * small meaning <10, probably
    ***************************************************************************/
 
-    val( vertexLines, edgeLines, edgeListLines ): (
-      List[(Long,Long)], List[(Long,Long)], List[(Long,Long)]
-    ) = {
-      val starlines: List[(String,Long)] = {
-        val starRegex = """\*([a-zA-Z]+).*""".r
-        linedFile.filter {
-          case (line,index) => line match {
-            case starRegex(id) => true
-            case _ => false
+      val( vertexLines, edgeLines, edgeListLines ): (
+        List[(Long,Long)], List[(Long,Long)], List[(Long,Long)]
+      ) = {
+        val starlines: List[(String,Long)] = {
+          val starRegex = """\*([a-zA-Z]+).*""".r
+          linedFile.filter {
+            case (line,index) => line match {
+              case starRegex(id) => true
+              case _ => false
+            }
           }
         }
+        .union( sc.parallelize( Array( ( "", linedFile.count ) ) ) )
+        .collect
+        .toList
+        .sortBy( _._2 )
+        PajekFile.intervals( starlines )
       }
-      .union( sc.parallelize( Array( ( "", linedFile.count ) ) ) )
-      .collect
-      .toList
-      .sortBy( _._2 )
-      PajekFile.intervals( starlines )
-    }
 
   /***************************************************************************
    * Get node number n
    ***************************************************************************/
 
-    val n = {
-      val verticesRegex = """(?i)\*Vertices[ \t]+([0-9]+)""".r
-      val vertexSpec = linedFile.filter {
-        case (line,index) => line match {
-          case verticesRegex(_) => true
-          case _ => false
+      val n = {
+        val verticesRegex = """(?i)\*Vertices[ \t]+([0-9]+)""".r
+        val vertexSpec = linedFile.filter {
+          case (line,index) => line match {
+            case verticesRegex(_) => true
+            case _ => false
+          }
+        }
+
+        vertexSpec.first._1 match {
+          case verticesRegex(number) => number.toLong
         }
       }
 
-      vertexSpec.first._1 match {
-        case verticesRegex(number) => number.toLong
-      }
-    }
+    /***************************************************************************
+     * declare regex for comments, used to match all lined comments
+     ***************************************************************************/
 
-  /***************************************************************************
-   * declare regex for comments, used to match all lined comments
-   ***************************************************************************/
+      val commentRegex = """\%(.*)""".r
 
-    val commentRegex = """\%(.*)""".r
+    /***************************************************************************
+     * Read vertex information
+     ***************************************************************************/
 
-  /***************************************************************************
-   * Read vertex information
-   ***************************************************************************/
-
-    val names = {
-      val vertexRegex = """[ \t]*?([0-9]+)[ \t]+\"(.*)\".*""".r
-      // filter the relevant lines
-      val lines = linedFile.filter {
-        case (_,index) => PajekFile.withinBound( index, vertexLines )
-      }
-
-      val nameFromFile = lines.map {
-        case (line,index) => line match {
-          case commentRegex(_*) => ( -1L, "" ) // to be filtered out later
-          case vertexRegex(lineindex,vertexname)
-            =>( lineindex.toLong, vertexname )
-          case _ => throw new Exception(
-            "Vertex definition error: line " +(index+1).toString
-          )
+      val names = {
+        val vertexRegex = """[ \t]*?([0-9]+)[ \t]+\"(.*)\".*""".r
+        // filter the relevant lines
+        val lines = linedFile.filter {
+          case (_,index) => PajekFile.withinBound( index, vertexLines )
         }
-      }
-      // filter out non-positive indices
-      .filter {
-        case (index,_) => index > 0
-      }
 
-      // check indices are unique
-      nameFromFile.map {
-        case (index,name) => (index,1)
-      }
-      .reduceByKey(_+_)
-      .foreach {
-        case (index,count) => if( count > 1 )
-          throw new Exception("Vertex index "+index.toString+" is not unique!")
-      }
+        val nameFromFile = lines.map {
+          case (line,index) => line match {
+            case commentRegex(_*) => ( -1L, "" ) // to be filtered out later
+            case vertexRegex(lineindex,vertexname)
+              =>( lineindex.toLong, vertexname )
+            case _ => throw new Exception(
+              "Vertex definition error: line " +(index+1).toString
+            )
+          }
+        }
+        // filter out non-positive indices
+        .filter {
+          case (index,_) => index > 0
+        }
 
-      // Pajek file format allows unspecified nodes
-      // e.g. when the node number is 6 and only node 1,2,3 are specified,
-      // nodes 4,5,6 are still assumed to exist with node name = node index
+        // check indices are unique
+        nameFromFile.map {
+          case (index,name) => (index,1)
+        }
+        .reduceByKey(_+_)
+        .foreach {
+          case (index,count) => if( count > 1 )
+            throw new Exception("Vertex index "+index.toString+" is not unique!")
+        }
 
-      // names of unspecified nodes
-      val idx2name: RDD[(Long,String)] = sc.parallelize( List.range(1,n+1) )
-      .map {
-        case x => ( x, x.toString )
-      }
+        // Pajek file format allows unspecified nodes
+        // e.g. when the node number is 6 and only node 1,2,3 are specified,
+        // nodes 4,5,6 are still assumed to exist with node name = node index
 
-      nameFromFile.rightOuterJoin(idx2name)
-      .map {
-        case ( idx, (Some(name),_) ) => (idx,name)
-        case ( idx, (None,default) ) => (idx,default)
-      }
-    }
+        // names of unspecified nodes
+        val idx2name: RDD[(Long,String)] = sc.parallelize( List.range(1,n+1) )
+        .map {
+          case x => ( x, x.toString )
+        }
 
-  /***************************************************************************
-   * Read edge information and construct connection matrix
-   ***************************************************************************/
-
-    val sparseMat = {
-      // given the edge specifications (with or without weights)
-      // construct a connection matrix
-      // if no weight is given, default to weight=1
-      // if the same edge is specified more than once, aggregate the weights
-
-      // parse each line that specifies an edge
-      val edgeRegex1 =
-        """(?i)[ \t]*?([0-9]+)[ \t]+([0-9]*)[ \t]*""".r
-      val edgeRegex2 =
-        """(?i)[ \t]*?([0-9]+)[ \t]+([0-9]*)[ \t]+([0-9.]+)[ \t]*""".r
-      val edge1 =linedFile
-      // filter the relevant lines
-      .filter {
-        case (_,index) => PajekFile.withinBound( index, edgeLines )
-      }
-      // parse line
-      .map {
-        case (line,index) => line match {
-          case commentRegex(_*) => ( (-1L,-1L), 0.0 ) // to be filtered later
-          case edgeRegex1(from,to) =>
-            ( (from.toLong,to.toLong), 1.0 )
-          case edgeRegex2(from,to,weight) =>
-            ( (from.toLong,to.toLong) ,weight.toDouble )
-          case _ => throw new Exception(
-            "Edge definition error: line " +(index+1).toString
-          )
+        nameFromFile.rightOuterJoin(idx2name)
+        .map {
+          case ( idx, (Some(name),_) ) => (idx,name)
+          case ( idx, (None,default) ) => (idx,default)
         }
       }
 
-      // parse each line that specifies an edge list
-      val edge2 = linedFile
-      // filter the relevant lines
-      .filter {
-        case (_,index) => PajekFile.withinBound( index, edgeListLines )
-      }
-      // parse line
-      .flatMap {
-        case (line,index) => line match {
-          case commentRegex(_*) =>
-            Seq( ((-1L,-1L),0.0) ) // to be filtered later
-          case _ => {
-            val vertices = line.split("\\s+").filter(x => !x.isEmpty)
-            val verticesSlice = vertices.slice(1, vertices.length)
-            verticesSlice.map {
-              case toVertex => ((vertices(0).toLong, toVertex.toLong), 1.0)
+    /***************************************************************************
+     * Read edge information and construct connection matrix
+     ***************************************************************************/
+
+      val sparseMat = {
+        // given the edge specifications (with or without weights)
+        // construct a connection matrix
+        // if no weight is given, default to weight=1
+        // if the same edge is specified more than once, aggregate the weights
+
+        // parse each line that specifies an edge
+        val edgeRegex1 =
+          """(?i)[ \t]*?([0-9]+)[ \t]+([0-9]*)[ \t]*""".r
+        val edgeRegex2 =
+          """(?i)[ \t]*?([0-9]+)[ \t]+([0-9]*)[ \t]+([0-9.]+)[ \t]*""".r
+        val edge1 =linedFile
+        // filter the relevant lines
+        .filter {
+          case (_,index) => PajekFile.withinBound( index, edgeLines )
+        }
+        // parse line
+        .map {
+          case (line,index) => line match {
+            case commentRegex(_*) => ( (-1L,-1L), 0.0 ) // to be filtered later
+            case edgeRegex1(from,to) =>
+              ( (from.toLong,to.toLong), 1.0 )
+            case edgeRegex2(from,to,weight) =>
+              ( (from.toLong,to.toLong) ,weight.toDouble )
+            case _ => throw new Exception(
+              "Edge definition error: line " +(index+1).toString
+            )
+          }
+        }
+
+        // parse each line that specifies an edge list
+        val edge2 = linedFile
+        // filter the relevant lines
+        .filter {
+          case (_,index) => PajekFile.withinBound( index, edgeListLines )
+        }
+        // parse line
+        .flatMap {
+          case (line,index) => line match {
+            case commentRegex(_*) =>
+              Seq( ((-1L,-1L),0.0) ) // to be filtered later
+            case _ => {
+              val vertices = line.split("\\s+").filter(x => !x.isEmpty)
+              val verticesSlice = vertices.slice(1, vertices.length)
+              verticesSlice.map {
+                case toVertex => ((vertices(0).toLong, toVertex.toLong), 1.0)
+              }
             }
           }
         }
-      }
 
-      // combine edge1 +edge2
-      edge1.union(edge2)
-      // filter commented lines ( (-1,-1) pairs )
-      .filter {
-        case ((from,to),weight) => !(from==to && to== -1)
-      }
-      // aggregate the weights
-      .reduceByKey(_+_)
-      .map {
-        case ((from,to),weight) => {
-          // check that the vertex indices are valid
-          if( from.toLong<1 || from.toLong>n || to.toLong<1 || to.toLong>n )
-            throw new Exception(
-              "Edge index must be within 1 and "
-                +n.toString+"for connection ("+from.toString+","+to.toString+")"
-            )
-          // check that the weights are non-negative
-          if( weight.toDouble < 0 )
-            throw new Exception(
-              "Edge weight must be positive for connection ("
-                +from.toString+","+to.toString+")"
-            )
-          (from,(to,weight))
+        // combine edge1 +edge2
+        edge1.union(edge2)
+        // filter commented lines ( (-1,-1) pairs )
+        .filter {
+          case ((from,to),weight) => !(from==to && to== -1)
+        }
+        // aggregate the weights
+        .reduceByKey(_+_)
+        .map {
+          case ((from,to),weight) => {
+            // check that the vertex indices are valid
+            if( from.toLong<1 || from.toLong>n || to.toLong<1 || to.toLong>n )
+              throw new Exception(
+                "Edge index must be within 1 and "
+                  +n.toString+"for connection ("+from.toString+","+to.toString+")"
+              )
+            // check that the weights are non-negative
+            if( weight.toDouble < 0 )
+              throw new Exception(
+                "Edge weight must be positive for connection ("
+                  +from.toString+","+to.toString+")"
+              )
+            (from,(to,weight))
+          }
+        }
+        // weights of zero are legal, but will be filtered out
+        .filter {
+          case (from,(to,weight)) => weight>0
         }
       }
-      // weights of zero are legal, but will be filtered out
-      .filter {
-        case (from,(to,weight)) => weight>0
-      }
-    }
 
-    (n,names,sparseMat)
-  }
+      (n,names,sparseMat)
+    }
 
   /***************************************************************************
    * Catch exceptions
    ***************************************************************************/
-  catch {
-    case e: InvalidInputException =>
-      throw new Exception("Cannot open file "+filename)
-    case e: Exception =>
-      throw e
-    case _: Throwable =>
-      throw new Exception("Error reading file line")
+    catch {
+      case e: InvalidInputException =>
+        throw new Exception("Cannot open file "+filename)
+      case e: Exception =>
+        throw e
+      case _: Throwable =>
+        throw new Exception("Error reading file line")
+    }
+
+    Network.init( GraphFrame(nodes,edges) )
+
   }
 }
