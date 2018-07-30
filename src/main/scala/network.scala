@@ -12,12 +12,18 @@ sealed case class Network
 (
   tele: Double, // PageRank teleportation chance
   nodeNumber: Long, // number of vertices/nodes in network
-  graph: GraphFrame,
+  // graph: GraphFrame:
   // vertices: modular properties
   // vertices: | idx , prob , exitw , exitq |
   // (module index) (ergidc frequency) (exit prob w/o tele) (exit prob w/ tele)
   // edges: transition probability w/o tele
   // deges: | idx1 , idx2 , exitw |
+  graph: GraphFrame,
+  // sum_node plogp(prob), for codelength calculation
+  // it can only be calculated with the full graph and not the reduced one
+  // therefore it is calculated during Network.init()
+  // and stored here
+  probSum: Double
   codelength: Double // information theoretic entropy
 )
 {
@@ -79,13 +85,16 @@ object Network
     .select('idx1,'idx2,'pagerank*'exitw)
 
     // calculate current code length
-    val codeLength: Double = calCodeLength(modules)
+    val probSum: Double = modules.select( CommunityDetection.plogp('prob) )
+    .groupBy.sum('prob)
+    val codeLength: Double = calCodeLength( modules, probSum )
   }
 
   Network(
     tele, nodeNumber,
     GraphFrame(modules,edges),
     codeLength,
+    probSum,
     graph.vertices("name")
   )
 }
