@@ -61,6 +61,9 @@ object CommunityDetection {
 
   /***************************************************************************
    * math functions to calculate code length
+   * these are all static, pure functions
+   * so that given the same function arguments
+   * will always return the same result
    ***************************************************************************/
 
   def calQ( nodeNumber: Long, n: Long, p: Double, tele: Double, w: Double )
@@ -80,7 +83,9 @@ object CommunityDetection {
     )
     val deltaL =
       if( qi_sum>0 && qi_sum+delta_q>0 )
-        deltaLi +Partition.plogp( qi_sum +delta_q ) -Partition.plogp(qi_sum)
+        deltaLi
+        +CommunityDetection.plogp( qi_sum +delta_q )
+        -CommunityDetection.plogp( qi_sum )
       else
         0
     ( deltaLi, deltaL )
