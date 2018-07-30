@@ -2,7 +2,7 @@
    * abstract class to read in file
    * and construct GraphFrame
    * vertices: | idx , name , module |
-   * edges: | from , to , exit prob. w/o tele |
+   * edges: | idx1 , idx2 , exit prob. w/o tele |
    * this GraphFrame structure is the one to hold the entire graph information
    * which can be used to generate Network object for community detection
    ***************************************************************************/
