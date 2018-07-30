@@ -1,12 +1,39 @@
-sealed abstract class MergeAlgo( val sqlc: SQLContext ) {
-  def apply( network: Network, logFile: LogFile ): ( Network, DataFrame )
+  /***************************************************************************
+   * abstract base class for community detection algorithm
+   * based on greedy merging
+   *
+   * other than a few helper functions
+   * there is only one apply() function as interface
+   * no state is stored
+   * hence, this class/object is not necessary
+   * but can be replaced with simple function and function pointer
+   * the reason to use class/object is:
+   *   (1) organization: to group the apply() function and helper functions
+   *   (2) object factory: again arguably for better code organization
+   ***************************************************************************/
+sealed abstract class MergeAlgo {
+  // real meet of community detection algorithm
+  // Network object holds all relevant community detection variables
+  // returns also a GraphFrame of the original graph
+  // these two data structures together holds community data and graph data
+  // GraphFrame: vertex names, communities/partitions
+  // Network: community/partition size, PageRank/ergodic frequency,
+  //   and exit probability between vertices w/o teleportation
+  def apply( network: Network, logFile: LogFile ): ( Network, GraphFrame )
+
+  // calculate code length given modular properties
   def calCodeLength( modules: DataFrame ) = {
+    def plogp( x: Column ) = MergeAlgo.plogp(x)
     sqlc.udf.register( "plogp", MergeAlgo.plogp )
     if( modules.groupBy.count > 1 ) {
-      val plogp_sum_q = plogp( modules.groupBy.sum('exitq).head.getDouble(0) )
+      val plogp_sum_q = MergeAlgo.plogp( modules.groupBy.sum('exitq)
+        .head.getDouble(0) )
       val sum_plogp_q = -2*modules.select( plogp('exitq) ).groupBy.sum
+        .head.getDouble(0)
       val sum_plogp_p = -modules.select( plogp('prob) ).groupBy.sum
+        .head.getDouble(0)
       val sum_plogp_pq = modules.select( plogp('prob+'exitq) ).groupBy.sum
+        .head.getDouble(0)
       plogp_sum_q +sum_plogp_q +sum_plogp_p +sum_plogp_pq
     }
     else
@@ -16,6 +43,10 @@ sealed abstract class MergeAlgo( val sqlc: SQLContext ) {
   }
 }
 
+  /***************************************************************************
+   * static functions for code length calculation
+   * and simple factory to return merge algorithm object
+   ***************************************************************************/
 object MergeAlgo {
   /***************************************************************************
    * simple merge algorithm factory
