@@ -1,6 +1,5 @@
   /***************************************************************************
    * abstract base class for community detection algorithm
-   * based on greedy merging
    *
    * other than a few helper functions
    * there is only one apply() function as interface
@@ -11,7 +10,7 @@
    *   (1) organization: to group the apply() function and helper functions
    *   (2) object factory: again arguably for better code organization
    ***************************************************************************/
-sealed abstract class MergeAlgo {
+sealed abstract class CommunityDetection {
   // real meet of community detection algorithm
   // Network object holds all relevant community detection variables
   // returns also a GraphFrame of the original graph
@@ -23,10 +22,10 @@ sealed abstract class MergeAlgo {
 
   // calculate code length given modular properties
   def calCodeLength( modules: DataFrame ) = {
-    def plogp( x: Column ) = MergeAlgo.plogp(x)
-    sqlc.udf.register( "plogp", MergeAlgo.plogp )
+    def plogp( x: Column ) = CommunityDetection.plogp(x)
+    sqlc.udf.register( "plogp", CommunityDetection.plogp )
     if( modules.groupBy.count > 1 ) {
-      val plogp_sum_q = MergeAlgo.plogp( modules.groupBy.sum('exitq)
+      val plogp_sum_q = CommunityDetection.plogp( modules.groupBy.sum('exitq)
         .head.getDouble(0) )
       val sum_plogp_q = -2*modules.select( plogp('exitq) ).groupBy.sum
         .head.getDouble(0)
@@ -47,11 +46,11 @@ sealed abstract class MergeAlgo {
    * static functions for code length calculation
    * and simple factory to return merge algorithm object
    ***************************************************************************/
-object MergeAlgo {
+object CommunityDetection {
   /***************************************************************************
    * simple merge algorithm factory
    ***************************************************************************/
-  def choose( algo: String ): MergeAlgo =
+  def choose( algo: String ): CommunityDetection =
     if( algo == "InfoMap" )
       new InfoMap
     else if( algo == "InfoFlow" )

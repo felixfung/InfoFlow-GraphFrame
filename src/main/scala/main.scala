@@ -29,7 +29,7 @@ object InfoFlowMain {
 
     // initialize parameters from config file
     val graphFile = config.graphFile
-    val merge: MergeAlgo = MergeAlgo.choose( config.mergeAlgo )
+    val communityDetection = CommunityDetection.choose( config.algorithm )
     val logFile = new LogFile(
       config.logDir,
       config.logWriteLog, config.rddText,
@@ -53,7 +53,7 @@ object InfoFlowMain {
    ***************************************************************************/
     val graph0 = GraphFile.openFile( sqlContext, pajekFile ).graph
     val net0 = Network.init( graph0, config.tele )
-    val (net1,graph1) = merge( net0, logFile )
+    val (net1,graph1) = communityDetection( net0, logFile )
 
   /***************************************************************************
    * save graph
