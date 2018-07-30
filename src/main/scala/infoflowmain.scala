@@ -8,9 +8,6 @@ import org.apache.spark.sql.DataFrame
 import org.graphframes._
 
 object InfoFlowMain {
-  /***************************************************************************
-   * Main function
-   ***************************************************************************/
   def main( args: Array[String] ): Unit = {
 
   /***************************************************************************
@@ -54,15 +51,14 @@ object InfoFlowMain {
   /***************************************************************************
    * read file and solve
    ***************************************************************************/
-    val graphFile = new GraphFile.openFile( sc, sqlContext, pajekFile )
-    val net0 = graphFile.network
-    val (net1,partition) = merge( net0, logFile )
+    val graph0 = GraphFile.openFile( sqlContext, pajekFile ).graph
+    val net0 = Network.init( graph0, config.tele )
+    val (net1,graph1) = merge( net0, logFile )
 
   /***************************************************************************
-   * Output
+   * save graph
    ***************************************************************************/
-    if( !logFile.logSteps )
-      logFile.save( net1, false )
+    logFile.save( net1, graph1, false, "" )
 
   /***************************************************************************
    * Stop Spark Context
