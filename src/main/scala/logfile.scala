@@ -1,70 +1,171 @@
-import org.apache.spark.rdd.RDD
-
 import java.io._
 
   /***************************************************************************
-   * Helper class to write log data and save RDDs
-   * each object may or may not be for debugging purpose
-   * and each operation might or might not be for debugging purpose
+   * Helper class to write log merging progress and save graph data
+   *
+   * Data:
+   * merging progress data is dictated by the specific merge algorithm
+   * generally involving the code length, number of merges, number of modules;
+   * graph data involve:
+   *   vertices: | idx , size (number of nodes) , prob (ergodic frequency) |
+   *   edges: | idx1 , idx2 , weight (exit prob w/o tele) |
+   * equally important is the original graph
+   * which provides a mapping from each node to each module index
+   * and the names of each node
+   * to be used in conjunction with the partitioning data
+   *
+   * File formats:
+   * merging progress data is written to a plain text file
+   * graph data saving format(s) is specified in constructor
+   * options include plain text file, Parquet, JSon
+   * partitioning data is saved in the same format as graph data
+   *
+   * Debugging data:
+   * each LogFile instantiation may or may not be for debugging purpose
+   * each operation might or might not be for debugging purpose
    * so that an operation is only performed if:
    *   (1) the operation is not for debugging, OR
    *   (2) the log file object is for debugging
    ***************************************************************************/
 
-class LogFile(
-  val outputDir: String,
-  val writeLog: Boolean,
-  val rddText: Boolean,
-  val rddJSon: Int, // 0->no output; 1->output full graph; 2->reduced graph
-  val logSteps: Boolean,
-  val append: Boolean
+sealed class LogFile(
+  /***************************************************************************
+   * path names, INCLUDING file names and extensions
+   * if the path name is empty then the associated files are not saved
+   ***************************************************************************/
+  val pathLog:       String,   // plain text file path for merge progress data
+  val pathParquet:   String,   // parquet file path for graph data
+  val pathText:      String,   // RDD text file path for graph data
+  val pathJSon:      String,   // local JSON file path for graph data
+
+  /***************************************************************************
+   * flags to specify whether associated graph data are saved
+   ***************************************************************************/
+  val savePartition: Boolean,  // whether to save partitioning data
+  val saveName:      Boolean,  // whether to save node naming data
+
+  /***************************************************************************
+   * a logging operation is only performed if:
+   *   (1) the operation is not for debugging, OR
+   *   (2) the log file object is for debugging
+   ***************************************************************************/
+  val debug:         String,   // whether to print debug details
 ) {
+
   /***************************************************************************
    * Constructor: create directory and log file within
    ***************************************************************************/
 
-  // create output directory
-  new File(outputDir).mkdirs
   // create file to store the loop of code lengths
-  val logFile = {
-    val file = new File( outputDir +"/log.txt" )
-    if( append && file.exists && !file.isDirectory )
-      new PrintWriter( new FileOutputStream(file,true) )
-    else
-      new PrintWriter(file)
+  val logFile = if( !pathLog.isEmpty ) {
+    val file = new File( pathLog )
+    new PrintWriter(file)
   }
+  else null
 
   /***************************************************************************
-   * write message to log file
+   * simple functions
    ***************************************************************************/
-  def write( msg: String ) =
-    if( writeLog ) {
-      /*if( append )*/ logFile.append(msg)
-      //else logFile.write(msg)
-    }
+  def write( msg: String, debugging: Bool )
+  = if( !pathLog.isEmpty && ( !debugging || debug ) ) logFile.append(msg)
+  def close = f( !pathLog.isEmpty ) logFile.close
 
   /***************************************************************************
-   * save an RDD object to a text file
+   * save graph into formats specified from object parameters
    ***************************************************************************/
-  def saveText[T]( rdd: RDD[T], id: String, stepping: Boolean ) =
-    if( rddText && ( !stepping || logSteps ) )
-      rdd.saveAsTextFile( outputDir +"/" +id )
-
+  def save(
+    network: Network,
+    // original graph
+    // vertices: | idx , name , module |
+    // edges: | from , to , exit prob. w/o tele |
+    graphFile: DataFrame,
+    debugging: Bool,
+    debugExt: String // this string is appended to file name (for debugging)
+  ) = {
   /***************************************************************************
-   * save a partition object to a JSON file
+   * when debugging, an additional string is appended
+   * after the file name and before the final dot
+   * this helper function returns the full path before and after the dot
    ***************************************************************************/
-  def saveJSon( partition: Partition, id: String, stepping: Boolean ) =
-    if( rddJSon>0 && ( !stepping || logSteps ) ) {
-      if( rddJSon == 1 )
-        partition.saveJSon( outputDir +"/" +id )
-      else if( rddJSon == 2 ) {
-        partition.saveReduceJSon( outputDir +"/" +id )
-
+    def filePathInsert( filePath: String, insertion: String ): String = {
+      val regex = """(.*)\.(\w+)""".r
+      filePath match {
+        case regex(path,ext) => path +insertion +"."+ext
+        case _ => filePath +insertion
       }
     }
+  /***************************************************************************
+   * a logging operation is only performed if:
+   *   (1) the operation is not for debugging, OR
+   *   (2) the log file object is for debugging
+   ***************************************************************************/
+    if( !debugging || debug ) {
 
   /***************************************************************************
-   * close log file
+   * saving to Parquet and RDD text routines are virtually identical
+   * except they have different guards and call different functions
+   * therefore, implement here two functions
    ***************************************************************************/
-  def close = logFile.close
+      // routine to save all vertices, edges, partitioning and naming
+      def saveDF(
+        guard: Boolean, savePartition: Boolean, saveName: Boolean,
+        debugging: Boolean, filePath: String, debugExt: String,
+      ): Unit = {
+        // routine to save an individual dataframe
+        def saveStruct( guard: Boolean, debugging: Boolean,
+          filePath: String, fileExt: String, debugExt: String,
+          saveFn: ( (String,DataFrame) => Unit ), struct: DataFrame
+        ): Unit = {
+          if( guard ) {
+            val filename = if( !debugging )
+              filePathInsert( filePath, fileExt )
+            else
+              filePathInsert( filePath, debugExt+fileExt ),
+            saveFn( filename, struct )
+          }
+        }
+
+        if( guard ) {
+          saveStruct( true, pathParquet, "-vertices",
+            LogFile.saveParquet, network.vertices )
+          saveStruct( true, pathParquet, "-edges",
+            LogFile.saveParquet, network.edges )
+          saveStruct( savePartition, pathParquet, "-partition",
+            LogFile.saveParquet, partition )
+          saveStruct( saveName, pathParquet, "-name",
+            LogFile.saveParquet, network.name )
+        }
+      }
+
+      saveDF( !pathParquet.isEmpty, savePartition, saveName,
+        debugging, pathParquet, debugExt )
+      saveDF( !pathText.isEmpty, savePartition, saveName,
+        debugging, pathText, debugExt )
+
+      /*if( !pathText.isEmpty ) {
+        saveStruct( true, pathText, "-vertices",
+          LogFile.saveText, network.vertices )
+        saveStruct( true, pathText, "-edges",
+          LogFile.saveText, network.edges )
+        saveStruct( savePartition, pathText, "-partition",
+          LogFile.saveText, network.partition )
+        saveStruct( saveName, pathText, "-name",
+          LogFile.saveText, network.name )
+      }*/
+
+  /***************************************************************************
+   * routine to save JSon
+   ***************************************************************************/
+    }
+  }
+}
+
+object LogFile
+{
+  def saveParquet( filename: String, struct: DataFrame ): Unit
+  = struct.write.parquet(filename) // check syntax
+  def saveText( filename: String, struct: DataFrame ): Unit
+  = struct.saveAsTextFile(filename)
+
+  def saveJSon( partition: Partition, id: String ) = ???
 }
