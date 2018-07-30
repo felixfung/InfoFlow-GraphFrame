@@ -1,8 +1,6 @@
-sealed class InfoFlow extends MergeAlgo
-{
-  def apply( network: Network, logFile: LogFile ): ( Network, DataFrame ) = {
-
   /***************************************************************************
+   * InfoFlow community detection algorithm
+   *
    * this is the multimerging algorithm
    * where each module merges with another module
    * that gives the greatest reduction in the code length
@@ -13,17 +11,23 @@ sealed class InfoFlow extends MergeAlgo
    *   (3) it seeks a merge with another, which seeks merge with some other
    *       module, and so on; in which case we merge all these modules
    ***************************************************************************/
+
+sealed class InfoFlow extends CommunityDetection
+{
+  def apply( network: Network, graph: GraphFrame, logFile: LogFile ):
+  ( Network, GraphFrame ) = {
+    @scala.annotation.tailrec
     def recursiveMerge(
-      loop: Long, network: Network, partition: DataFrame
-    ): ( Network, DataFrame ) = {
+      loop: Long, network: Network, graph: GraphFrame
+    ): ( Network, GraphFrame ) = {
 
   /***************************************************************************
    * termination routine, log then return
    ***************************************************************************/
-      private def terminate = {
+      def terminate( loop: Long, network: Network, graph: GraphFrame ) = {
         logFile.write( "Merging terminates after " +loop.toString +" merges" )
         logFile.close
-        ( network, partition )
+        ( network, graph )
       }
 
   /***************************************************************************
@@ -39,39 +43,16 @@ sealed class InfoFlow extends MergeAlgo
       // table of all possible merges, and code length change
       // | idx1 , idx2 , dL |
       val deltaL = {
-        val qi_sum = network.groupBy.sum("exitq")
-
-        // udf function to calculate change in code length
-        def calDeltaL(
-          nodeNumber: Long,
-          n1: Long, n2: Long, p1: Double, p2: Double,
-          tele: Double, w12: Double,
-          qi_sum: Double, q1: Double, q2: Double
-        ) = {
-          val(_,deltaL) = MergeAlgo.calDeltaL(
-            nodeNumber,
-            n1, n2, p1, p2,
-            tele, w12,
-            qi_sum, q1, q2
-          )
-          deltaL
-        }
-        sqlc.udf.register( "calDeltaL", calDeltaL )
-
+        val qi_sum = network.vertices.groupBy.sum('exitq)
         network.graph.edges
-        .join(
-        // get all modular properties from "m1" and "m2"
-          network.graph.vertices.alias("m1"),
-          network.edges("idx1") === network.vertices("idx")
-        )
-        .join(
-          network.graph.vertices.alias("m2"),
-          network.edges("idx2") === network.vertices("idx")
-        )
+        // get all modular properties from "idx1" and "idx2"
+        .join( network.graph.vertices.alias('m1), 'idx1 === col("m1.idx") )
+        .join( network.graph.vertices.alias('m2), 'idx2 === col("m2.idx") )
         // create table of change in code length of all possible merges
         .select(
-          col("idx1"), col("idx2"),
-          calDeltaL(
+          col('idx1), col('idx2),
+        CommunityDetection.calDeltaL(
+          InfoFlow.calDeltaL(
             network.nodeNumber, "m1.size", "m2.size", "m1.prob", "m2.prob",
             network.tele, "m1.exitw"+"m2.exitw"-"weight",
             qi_sum, "m1.exitq", "m2.exitq"
@@ -80,11 +61,15 @@ sealed class InfoFlow extends MergeAlgo
       }
 
   /***************************************************************************
-   * logging: current code length
+   * logging: current state
    ***************************************************************************/
 
+      // log code length
       logFile.write( "State " +loop.toString+": "
         +"code length " +network.codelength.toString +"\n" )
+
+      // save graph data
+      logFile.save( network, graph, "net"+loop.toString, true )
 
   /***************************************************************************
    * each module seeks to merge with another connected module
@@ -137,7 +122,7 @@ sealed class InfoFlow extends MergeAlgo
       // if m2Merge is empty, then no modules seek to merge
       // terminate loop
       if( m2Merge.count == 0 )
-        terminate
+        terminate( loop, network, graph )
 
   /***************************************************************************
    * for all inter-modular connection, assign it to a module
@@ -147,7 +132,7 @@ sealed class InfoFlow extends MergeAlgo
       // | idx , module |
       val moduleMap = GraphFrame( network.nodes, m2Merge )
       .connectedComponents.run
-      .node.vertices.select( 'idx, 'connectedcomponents as "module" )
+      .node.vertices.select( 'idx, 'components as "module" )
 
       // new nodal-modular partitioning scheme
       // | idx , module |
@@ -159,6 +144,11 @@ sealed class InfoFlow extends MergeAlgo
       .select( 'node,
         when( 'idx.isNotNull, "moduleMap.module" )
        .otherwise( "partition.module" )
+      )
+
+      val newGraph = GraphFrame(
+        graph.vertices.drop('module).join( newPartition, 'idx ),
+        graph.edges
       )
 
   /***************************************************************************
@@ -209,12 +199,6 @@ sealed class InfoFlow extends MergeAlgo
         .filter( 'idx1 === 'idx2 )
         .select( 'idx1 as "idx", 'weight )
 
-        def calQ(
-          nodeNumber: Long, n: Long: p: Double, tele: Double: w: Double
-        ): Double =
-          Partition.calQ( nodeNumber, n, p, tele, w )
-        sqlc.udf.register( "calQ", calQ )
-
         sumOnly.join( intraEdges, 'idx, "outer_left" )
         .select( 'idx, 'size, 'prob,
           when('weight.isNotNull,'exitw-'weight).otherwise('exitw) as "exitw"
@@ -224,7 +208,7 @@ sealed class InfoFlow extends MergeAlgo
           .otherwise(
             calQ( nodeNumber, n, p, network.tele, w )
           )
-          as "exitw"
+          as "exitq"
         )
       }
 
@@ -237,7 +221,7 @@ sealed class InfoFlow extends MergeAlgo
       // if code length is not reduced, terminate
       val newCodeLength = calCodeLength(newModules)
       if( newCodeLength >= network.codeLength )
-        terminate
+        terminate( loop, network, graph )
 
   /***************************************************************************
    * generate new graph and new network
@@ -246,7 +230,11 @@ sealed class InfoFlow extends MergeAlgo
       val newNetwork = {
         val newEdges = interEdges.filter( 'idx1 != 'idx2 )
         val newGraph = GraphFrame( newModules, newEdges )
-        Network( network.tele, newNodeNumber, newGraph, newCodeLength )
+        Network(
+          network.tele, newNodeNumber,
+          newGraph,
+          network.probSum, newCodeLength
+        )
       }
 
   /***************************************************************************
@@ -261,12 +249,8 @@ sealed class InfoFlow extends MergeAlgo
   /***************************************************************************
    * recursive function call
    ***************************************************************************/
-      recursiveMerge( loop+1, newNetwork, newPartition )
+      recursiveMerge( loop+1, newNetwork, newGraph )
     }
-
-    // table that maps each node to a module
-    // initial partition: each node is its own module
-    val partition = modules.select('idx as "node", 'idx as "module")
-    recursiveMerge( 0, network, partition )
+    recursiveMerge( 0, network, graph )
   }
 }
