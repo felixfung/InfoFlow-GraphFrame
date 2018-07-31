@@ -1,347 +1,303 @@
-import org.apache.spark.rdd.RDD
-
-import java.io._
-
-object InfoMap
-{
   /***************************************************************************
-   * given all relevant quantities, calculate new table entry
-   ***************************************************************************/
-  def tableEntry( nodeNumber: Long, tele: Double,
-    qi_sum: Double, n1: Long, n2: Long, p1: Double, p2: Double,
-    w1: Double, w2: Double, w12: Double, q1: Double, q2: Double ):
-  (Long,Long,Double,Double,Double,Double,Double,Double,Double,Double) = {
-    val q12 = Partition.calQ( nodeNumber, n1+n2, p1+p2, tele, w1+w2-w12 )
-    if( q12 > 0 ) {
-      val (deltaLi12,_) = Partition.calDeltaL(
-        nodeNumber,
-        n1, n2, p1, p2,
-        tele, w1+w2-w12,
-        qi_sum, q1, q2
-      )
-      (n1,n2,p1,p2,w1,w2,w12,q1,q2,deltaLi12)
-    }
-    else { // q12==0 iff we are merging the entire graph into one module
-      (n1,n2,p1,p2,w1,w2,w12,q1,q2,0.0)
-    }
-  }
-  /***************************************************************************
-   * calculate deltaL, given deltaLi and q1, q2, q12
-   ***************************************************************************/
-  def calDeltaL( deltaLi: Double, qi_sum: Double,
-  q1: Double, q2: Double, q12: Double ) = {
-    val delta_q = q12-q1-q2
-    if( qi_sum>0 && qi_sum+delta_q>0 )
-      deltaLi +Partition.plogp( qi_sum +delta_q ) -Partition.plogp(qi_sum)
-    else
-      0
-  }
-}
-
-class InfoMap extends MergeAlgo
-{
-  /***************************************************************************
-   * ORIGINAL INFOMAP ALGORITHM
+   * originaL InfoMap algorithm
    * the function to partition of nodes into modules based on
    * greedily merging the pair of modules that gives
    * the greatest code length reduction
    * until code length is minimized
    ***************************************************************************/
-  def apply( partition: Partition, logFile: LogFile ): Partition = {
 
-  /***************************************************************************
-   * initial condition
-   * grab values from partition, and generate modular connection table
-   ***************************************************************************/
-    val nodeNumber = partition.nodeNumber
-    val tele = partition.tele
-
-    // the code length if all nodes in the graph merge into one module
-    // after the nodes are merged, this information is lost
-    // so this one time calculation is done in the beginning here
-    val ergodicFreqSum = partition.modules.map {
-      case (_,(_,p,_,_)) => Partition.plogp(p)
-    }
-    .sum
+sealed class InfoMap extends MergeAlgo
+{
+  def apply( network: Network, graph: GraphFrame, logFile: LogFile ):
+  ( Network, GraphFrame ) = {
 
     // sum of q's
     // used for deltaL calculations
-    val qi_sum = partition.modules.map {
-      case (_,(_,_,_,q)) => q
-    }
-    .sum
+    // will only be calculated once via full calculation
+    // subsequent calculations will use dynamic programming
+    val qi_sum = network.vertices.groupBy.sum('exitq)
 
-    // the table that contains all properties of all connections
-    // format of each entry is
-    // (
-    //   (index1,index2),
-    //   (n1,n2,p1,p2,w1,w2,w12,q1,q2,DeltaL12)
-    // )
-    // with this table, the modular properties are stored redundantly
-    // but means that no table joining is required in the loop
-    val table = partition.iWj.map {
-      case ((m1,m2),w12) => (m1,(m2,w12))
-    }
-    .join(partition.modules).map {
-      case (m1,((m2,w12),(n1,p1,w1,q1))) => (m2,(m1,n1,p1,w1,q1,w12))
-    }
-    .join(partition.modules).map {
-      case (m2,((m1,n1,p1,w1,q1,w12),(n2,p2,w2,q2))) =>
-        (
-          (m1,m2),
-          InfoMap.tableEntry(nodeNumber,tele,qi_sum,n1,n2,p1,p2,w1,w2,w12,q1,q2)
-        )
-    }
+    // the table that lists all possible merges,
+    // the modular properties of the two vertices
+    // and change in code length based on the hypothetical modular merge
+    // | idx1 , idx2 , n1 , n2 , p1 , p2 , w1 , w2 , w12 , q1 , q2 , dL |
+    // where n = size
+    //       p = prob
+    //       w = exitw
+    //       q = exitq
+    //      dL = change in codelength
+    val edgeList = generateEdgeList( network, qi_sum )
 
   /***************************************************************************
-   * recursive function
-   * meat of algorithm
    * greedily merge modules until code length is minimized
    ***************************************************************************/
     @scala.annotation.tailrec
     def recursiveMerge(
       loop: Long,
+      network: Network, graph: GraphFrame
       qi_sum: Double,
-      partition: Partition,
-      table: RDD[((Long,Long),(Long,Long,
-        Double,Double,Double,Double,Double,Double,Double,Double))]
+      edgeList: DataFrame
     ): Partition = {
 
+      //  create local checkpoint to truncate RDD lineage (every ten loops)
+      if( loop%10 == 0 ) trim( network, graph )
+
+      // log current state
+      logFile.write( "State " +loop.toString+": "
+        +"code length " +network.codelength.toString +"\n" )
+      logFile.save( network, graph, "net"+loop.toString, true )
+
+      // if there are no modules to merge, teminate
+      if( table.count == 0 )
+        terminate( loop, network, graph )
+      else {
+        val(m1,m2,n1,n2,p1,p2,w1,w2,w1_2,q1,q2,dL) = findMerge(edgeList)
+        val(m12,n12,p12,w12,q12) =
+          calNewcal(m1,m2,n1,n2,p1,p2,w1,w2,w1_2)
+        val new_qi_sum = qi_sum +q12 -q1 -q2
+        val deltaL = InfoMap.calDeltaL( deltaLi12, qi_sum, q1, q2, q12)
+        val newCodelength = network.codelength +deltaL
+        ///////////////////////          ISSUE HERE (qi_sum or new_qi_sum?)
+
+        if( deltaL == 0 ) // iff the entire graph is merged into one module
+        {
+          if( network.codeLength < -network.ergodicFreqSum )
+            terminate( loop, network, graph )
+          else {
+            graph.select('idx,'name,1) // all nodes are module 1
+            terminate( loop, network, graph )
+          }
+        }
+        else if( deltaL > 0 )
+          terminate( loop, network, graph )
+        else { // otherwise actually merge
+          // log merging details
+          logFile.write(
+            "Merge " +loop.toString
+            +": merging modules " +m1.toString +" and " +m2.toString
+            +" with code length reduction " +deltaL.toString +"\n" )
+
+          // register partition to lower merge index
+          val newGraph = graph.select( 'idx, 'name
+            when( 'module===m1 || 'module===m2, m12 ).otherwise('module)
+          )
+          val newEdgeList = genEdgeList(edgeList)
+          val newNetwork = {
+            val mMod = m12
+            val mDel = if( m1==mMod ) m2 else m1
+            calNewNetwork(
+              mMod, mDel, n12, p12, w12, q12,
+              network, newEdgeList
+            )
+          }
+        }
+      }
   /***************************************************************************
-   * create local checkpoint to truncate RDD lineage (every ten loops)
+   * routine finished, below are function definitions and tail recursive call
    ***************************************************************************/
-      if( loop%10 == 0 ) {
-        table.localCheckpoint
-        partition.localCheckpoint
+
+  /***************************************************************************
+   * routine finished, below are function definitions and tail recursive call
+   ***************************************************************************/
+      def trim( network: Network, graph: GraphFrame ): Unit = {
+        Network.trim( network.graph.vertices )
+        Network.trim( network.graph.edges )
+        Network.trim( graph.vertices )
+        Network.trim( graph.edges )
+        Network.trim( edgeList )
       }
 
   /***************************************************************************
-   * logging
+   * termination routine, log then return
    ***************************************************************************/
-      logFile.saveText( partition.iWj, "/connection_"+(loop-1).toString, true )
-      logFile.saveText( partition.partitioning, "/partition_"+(loop-1).toString,
-        true )
-      logFile.write(
-        "State " +(loop-1).toString
-        +": code length " +partition.codeLength.toString +"\n"
-      )
-      logFile.saveJSon( partition, "graph_"+(loop-1).toString+".json", true )
-
-  /***************************************************************************
-   * loop termination routine
-   ***************************************************************************/
-      def terminate = {
-        logFile.write( "Merging terminates after "
-          +(loop-1).toString +" merges" )
+      def terminate( loop: Long, network: Network, graph: GraphFrame ) = {
+        logFile.write( "Merging terminates after " +loop.toString +" merges" )
         logFile.close
-        partition
+        ( network, graph )
       }
 
   /***************************************************************************
-   * if there are no modules to merge, teminate
+   * generate edgeList
+   * | idx1 , idx2 , n1 , n2 , p1 , p2 , w1 , w2 , w12 , q1 , q2 , dL |
+   * where n <= size
+   *       p <=> prob
+   *       w <=> exitw
+   *       q <=> exitq
+   *      dL <=> change in codelength
    ***************************************************************************/
-      if( table.isEmpty )
-      {
-        terminate
+      def generateEdgeList( network: Network, qi_sum: Double ): DataFrame = {
+        network.graph.edges.alias("e1")
+        // get all modular properties from "idx1" and "idx2"
+        .join( network.graph.vertices.alias('m1), 'idx1 === col("m1.idx") )
+        .join( network.graph.vertices.alias('m2), 'idx2 === col("m2.idx") )
+        // find the opposite edge, needed for exitw calculation
+        .join( network.graph.vertices.alias("e2"),
+          col("e1.idx1")===col("e2.idx2") && col("e1.idx2")===col("e2.idx1"),
+          "left_outer" )
+        // list ni, pi, wi, for i=1,2
+        // and calculate w12
+        .select(
+          'idx1, 'idx2,
+          col("m1.size") as "n1", col("m2.size") as "n2",
+          col("m1.prob") as "p1", col("m2.prob") as "p2",
+          col("m1.exitw") as "w1", col("m2.exitw") as "w2",
+          // calculation of the exit probability
+          // of hypothetically merged module between m1 and m2
+          // = w1 + w2 -w(m1->m2) -w(m2->m1)
+          when( col("e2.exitw").isNotNull,
+            col("m1.exitw")+col("m2.exitw")-col("e1.exitw")-col("e2.exitw")
+          ).otherwise(
+            col("m1.exitw")+col("m2.exitw")-col("e1.exitw")
+          ) as "w12"
+        )
+        // calculate q1, q2
+        .select( 'idx1, 'idx2, 'n1, 'n2, 'p1, 'p2, 'w1, 'w2, 'w1_2,
+          calQ( network.tele, network.nodeNumber, n1, p1, w1 ) as "q1",
+          calQ( network.tele, network.nodeNumber, n2, p2, w2 ) as "q2"
+        )
+        // calculate dL
+        .select( 'idx1, 'idx2, 'n1, 'n2, 'p1, 'p2, 'w1, 'w2, 'w1_2, 'q1, 'q2,
+          CommunityDetection.calDeltaL(
+            network.nodeNumber, n1, n2, p1, p2,
+            network.tele, qi_sum, 'q1, 'q2,
+            'w_12
+          ) as "dL"
+        )
+
+        // simple wrapper to calculate Q as a Spark SQL function
+        def calQ(
+          tele: Column
+          nodeNumber: Column, size: Column, prob: Column,
+          exitw: Column
+        ): Column = CommunityDetection.calQ(
+          tele, nodeNumber, size, prob, exitw
+        )
       }
+
   /***************************************************************************
    * find pair to merge according to greatest reduction in code length
    * and grab all associated quantities
    ***************************************************************************/
-      else {
-        val( (merge1,merge2), (n1,n2,p1,p2,w1,w2,w102,q1,q2,deltaLi12) )
-          = table.reduce {
-          case (
-            (
-              (merge1A,merge2A),
-              (n1A,n2A,p1A,p2A,w1A,w2A,w12A,q1A,q2A,deltaLi12A)
-            ),
-            (
-              (merge1B,merge2B),
-              (n1B,n2B,p1B,p2B,w1B,w2B,w12B,q1B,q2B,deltaLi12B)
-            )
-          )
-          => {
-            val q12A = Partition.calQ(
-              nodeNumber, n1A+n2A, p1A+p2A, tele,
-              w1A+w2A-w12A
-            )
-            val q12B = Partition.calQ(
-              nodeNumber, n1B+n2B, p1B+p2B, tele,
-              w1B+w2B-w12B
-            )
-            val deltaLA = InfoMap.calDeltaL(deltaLi12A,qi_sum,q1A,q2A,q12A)
-            val deltaLB = InfoMap.calDeltaL(deltaLi12B,qi_sum,q1B,q2B,q12B)
-            if( deltaLA < deltaLB )
-               ((merge1A,merge2A),
-                 (n1A,n2A,p1A,p2A,w1A,w2A,w12A,q1A,q2A,deltaLi12A))
-             else
-               ((merge1B,merge2B),
-                 (n1B,n2B,p1B,p2B,w1B,w2B,w12B,q1B,q2B,deltaLi12B))
-          }
+      def findMerge( edgeList: DataFrame ) = {
+        edgeList
+        // find minimum change in codelength
+        .groupBy.min('dL)
+        // if multiple merges has the same dL, grab the one with smallest idx1
+        .join( edgeList, 'dL )
+        .groupBy.min('idx1)
+        .alias("select").join( edgeList.alias("b"),
+          col("select.idx1")===col("b.idx1") && col("select.dL")===col("b.dL")
+        )
+        .select('idx1,'idx2,'n1,'n2,'p1,'p2,'w1,'w2,'w1_2,'q1,'q2,'dL)
+        .head
+        match {
+          case Row(m1,m2,n1,n2,p1,p2,w1,w2,w12,q1,q2,dL)
+          => (m1,m2,n1,n2,p1,p2,w1,w2,w12,q1,q2,dL)
         }
+      }
 
   /***************************************************************************
-   * CALCULATE NEW SCALAR PROPERTIES
-   * these relate to the newly merged modules
+   * calculate newly merged module properties
    ***************************************************************************/
+      def calNewcal(
+        m1: Long, m2: Long, n1: Long, n2: Long,
+        p1: Double, p2: Double, w1: Double, w2: Double, w1_2: Double
+      ) = {
+
+        // the new modular index is the lower one
+        val m12 = if( m1<m2 ) m1 else m2
 
         // calculate new modular properties
         val n12 = n1 +n2
         val p12 = p1 +p2
-        val w12 = w1 +w2 -w102
-        val q12 = Partition.calQ( nodeNumber, n12, p12, tele, w12 )
-        // calculate new qi_sum
-        val new_qi_sum = qi_sum +q12 -q1 -q2
 
-        // calculate new code length
-        val deltaL = InfoMap.calDeltaL( deltaLi12, qi_sum, q1, q2, q12)
-        val newCodeLength = partition.codeLength +deltaL
+        // w12 is the exitw of module m12
+        // w1_2 is the sum of exitw of edges (idx1,idx2) and (idx2,idx1)
 
-  /***************************************************************************
-   * if the code length cannot be decreased, then terminate
-   * otherwise recalculate and recurse
-   ***************************************************************************/
+        // also needs w2_1 to calculate w12
+        val w2_1 = edgeList.filter( 'idx1===m2 && 'idx2===m1 )
+        .select('w1_2)
+        .head.getDouble(0)
+        val w12 = w1 +w2 -w1_2 -w2_1
+        val q12 = CommunityDetection.calQ(
+          network.tele, network.nodeNumber, n12, p12, tele, w12 )
 
-        // deltaL12==0 iff the entire graph is merged into one module
-        // if that is the selected merge, that means all other merges is +ve
-        // then we terminate
-        if( deltaL == 0 )
-        {
-          if( partition.codeLength < -ergodicFreqSum )
-            terminate
-          else {
-            val newPartitioning = partition.partitioning.map {
-              case (node,module) => (node,1)
-            }
-            terminate
-          }
-        }
-        // if code length cannot be decreased then terminate recursive algorithm
-        else if( deltaL > 0 )
-        {
-          terminate
-        }
-        else {
-          // log merging details
-          logFile.write( "Merge " +loop.toString +": merging modules "
-            +merge1.toString +" and " +merge2.toString
-            +" with code length reduction " +deltaL.toString +"\n" )
-          // register partition to lower merge index
-          val newPartitioning = partition.partitioning.map {
-            case (node,module) =>
-              if( module==merge2 ) (node,merge1) else (node,module)
-          }
+        ( m12, n12, p12, w12, q12 )
+      }
 
   /***************************************************************************
-   * UPDATE TABLE
-   * if it is an intra-modular connection (both indices match), delete
-   * if it relates to the newly merged module (one index match),
-   *     recalculate w_ij, q_ij, deltaL_ij
-   * if it is unrelated, (no index match), leave alone
+   * update edgeList
+   * by deleting merged edge
+   * updating modular properties
+   * and calculating dL
+   * given merged modular properties
    ***************************************************************************/
+      def genEdgeList(
+        m1: Long, m2: Long, m12: Long,
+        n12: Long, p12: Double, w12: Double, w1_2: Double, q12: Double,
+        edgeList: DataFrame
+      ): DataFrame = {
+        edgeList
+        // delete merged edge
+        // when both idx1 and idx2 hit m1 and m2
+        // at least one and perhaps two edges will be deleted
+        .filter(
+          !( 'idx1===m1 && 'idx2===m2 ) &&
+          !( 'idx1===m2 && 'idx2===m1 )
+        )
+        // when one of idx1 or idx2 hit m1 or m2,
+        // update its modular property
+        // and recalculate w12
+        .select(
+          when( 'idx1===m1 || 'idx1===m2, m12 ).otherwise('idx1),
+          when( 'idx2===m1 || 'idx2===m2, m12 ).otherwise('idx2),
+          when( 'idx1===m1 || 'idx1===m2, n12 ).otherwise('n1),
+          when( 'idx2===m1 || 'idx2===m2, n12 ).otherwise('n2),
+          when( 'idx1===m1 || 'idx1===m2, p12 ).otherwise('p1),
+          when( 'idx2===m1 || 'idx2===m2, p12 ).otherwise('p2),
+          when( 'idx1===m1 || 'idx1===m2, w12 ).otherwise('w1),
+          when( 'idx2===m1 || 'idx2===m2, w12 ).otherwise('w2),
+          'w_12,
+          when( 'idx1===m1 || 'idx1===m2, q12 ).otherwise('q1),
+          when( 'idx2===m1 || 'idx2===m2, q12 ).otherwise('q2)
+        )
+        // aggregate edge weights
+        .groupBy('idx1,'idx2).sum('w1_2)
+      }
 
-          val newTable = table.filter {
-            // delete the merged edge, ie, (merge1,merge2)
-            case ((from,to),_) => from!=merge1 || to!=merge2
-          }
-          .map {
-            // entries associated to merge2 now is associated to merge1
-            // and put in newly merged quantities to replace old quantities
-            case ((from,to),(ni,nj,pi,pj,wi,wj,wij,qi,qj,deltaLiij)) =>
-              if( from==merge1 || from==merge2 )
-                ((merge1,to),(n12,nj,p12,pj,w12,wj,wij,q12,qj,0.0))
-              else if( to==merge1 )
-                  ((from,merge1),(ni,n12,pi,p12,wi,w12,wij,qi,q12,0.0))
-              else if( to==merge2 ) {
-                if( merge1 < from )
-                  ((merge1,from),(n12,ni,p12,pi,w12,wi,wij,q12,qi,0.0))
-                else
-                  ((from,merge1),(ni,n12,pi,p12,wi,w12,wij,qi,q12,0.0))
-              }
-              else
-                ((from,to),(ni,nj,pi,pj,wi,wj,wij,qi,qj,deltaLiij))
-          }
-          .reduceByKey { // aggregate inter-modular connection weights
-            case (
-              (ni,nj,pi,pj,wi,wj,wij,qi,qj,deltaLiij),
-              (_,_,_,_,_,_,wji,_,_,_)
-            )
-            => (ni,nj,pi,pj,wi,wj,wij+wji,qi,qj,deltaLiij)
-          }
-          .map {
-            case (
-              (from,to),
-              ( (ni,nj,pi,pj,wi,wj,wij,qi,qj,deltaLiij) )
-            ) =>
-              // fill with newly merged modular properties
-              // and calculate q_ij, deltaL_ij
-              if( from==merge1 || to==merge1 )
-                (
-                  (from,to),
-                  InfoMap.tableEntry(
-                    nodeNumber,tele,qi_sum,ni,nj,pi,pj,wi,wj,wij,qi,qj
-                  )
-                )
-              // unrelated to newly merged module, leave unchanged
-              else
-                (
-                  (from,to),
-                  (ni,nj,pi,pj,wi,wj,wij,qi,qj,deltaLiij)
-                )
-          }
+  /***************************************************************************
+   * network object is actually not needed for InfoMap recursive calculation
+   ***************************************************************************/
+      def calNewNetwork(
+        mMod: Long, mDel: Long, n12: Long, p12: Long, w12: Double, q12: Double,
+        network: Network, newEdgeList: DataFrame
+      ): Network = {
 
-          val newiWj = newTable.map {
-            case ((from,to),(_,_,_,_,_,_,w12,_,_,_))
-            => ((from,to),w12)
-          }
+        val newModules = network.graph.vertices
+        // delete module
+        .filter('idx!=mDel)
+        // put in new modular properties
+        .select( 'idx,
+          when( 'idx===mMod, n12 ).otherwise('size),
+          when( 'idx===mMod, p12 ).otherwise('prob),
+          when( 'idx===mMod, w12 ).otherwise('exitw),
+          when( 'idx===mMod, q12 ).otherwise('exitq)
+        )
+
+        val newEdges = newEdgeList.select('idx1,'idx2,'w1_2)
+
+        Network(
+          network.nodeNumber, network.tele,
+          newModules, newEdges,
+          newCodeLength
+        )
+      }
 
   /***************************************************************************
    * recursive call
    ***************************************************************************/
-
-          val newPartition = Partition(
-            nodeNumber, tele, partition.names,
-            newPartitioning, partition.iWj0, newiWj,
-            partition.modules,
-            newCodeLength
-          )
-
-          recursiveMerge( loop+1, new_qi_sum,
-            newPartition, newTable )
-        }
-      }
+      recursiveMerge( loop+1, newNetwork, newGraph, new_qi_sum, newEdgeList )
     }
-
-  /***************************************************************************
-   * main function invokes recursive function
-   ***************************************************************************/
-
-    // the modular properties cannot be fully recovered from the table
-    // since table only stores modular properties
-    // when they are associated with an edge
-    // so, we return an empty modules RDD
-    val modules = table.map {
-      case _ => (0L,(0L,0.0,0.0,0.0))
-    }
-    .distinct
-    .filter {
-      case _ => false
-    }
-
-    val inputPartition = Partition(
-      nodeNumber, tele, partition.names,
-      partition.partitioning, partition.iWj0, partition.iWj, modules,
-      partition.codeLength
-    )
-
-    val newPartition =
-      recursiveMerge( 1,
-        qi_sum,
-        inputPartition,
-        table
-      )
-    newPartition
+    recursiveMerge( 0, network, graph, qi_sum, edgeList )
   }
-
 }
