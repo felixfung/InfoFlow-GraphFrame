@@ -26,20 +26,6 @@ sealed case class Network
   probSum: Double
   codelength: Double // information theoretic entropy
 )
-{
-  // function to trim RDD/DF lineage
-  // which should be performed within community detection algorithm iterations
-  // to avoid stack overflow problem
-  def localCheckpoint = {
-    def trim( df: DataFrame ): Unit = {
-      df.rdd.checkpoint
-      df.rdd.count
-      val newDf = df.rdd.toDF( df.schema )
-    }
-    trim( graph.vertices )
-    trim( graph.edges )
-  }
-}
 
 object Network
 {
@@ -88,13 +74,22 @@ object Network
     val probSum: Double = modules.select( CommunityDetection.plogp('prob) )
     .groupBy.sum('prob)
     val codeLength: Double = calCodeLength( modules, probSum )
+
+    Network(
+      tele, nodeNumber,
+      GraphFrame(modules,edges),
+      codeLength,
+      probSum,
+      graph.vertices("name")
+    )
   }
 
-  Network(
-    tele, nodeNumber,
-    GraphFrame(modules,edges),
-    codeLength,
-    probSum,
-    graph.vertices("name")
-  )
+  // function to trim RDD/DF lineage
+  // which should be performed within community detection algorithm iterations
+  // to avoid stack overflow problem
+  def trim( df: DataFrame ): Unit = {
+    df.rdd.checkpoint
+    df.rdd.count
+    df.rdd.toDF( df.schema )
+  }
 }

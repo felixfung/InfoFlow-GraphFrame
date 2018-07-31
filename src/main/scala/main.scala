@@ -53,7 +53,7 @@ object InfoFlowMain {
    ***************************************************************************/
     val graph0 = GraphFile.openFile( sqlContext, pajekFile ).graph
     val net0 = Network.init( graph0, config.tele )
-    val (net1,graph1) = communityDetection( net0, logFile )
+    val (net1,graph1) = communityDetection( net0, graph0, logFile )
 
   /***************************************************************************
    * save graph
