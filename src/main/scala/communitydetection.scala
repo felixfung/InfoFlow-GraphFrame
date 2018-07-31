@@ -1,7 +1,6 @@
   /***************************************************************************
    * abstract base class for community detection algorithm
    *
-   * other than a few helper functions
    * there is only one apply() function as interface
    * no state is stored
    * hence, this class/object is not necessary
@@ -10,6 +9,7 @@
    *   (1) organization: to group the apply() function and helper functions
    *   (2) object factory: again arguably for better code organization
    ***************************************************************************/
+
 sealed abstract class CommunityDetection {
   // real meet of community detection algorithm
   // Network object holds all relevant community detection variables
@@ -18,37 +18,15 @@ sealed abstract class CommunityDetection {
   // GraphFrame: vertex names, communities/partitions
   // Network: community/partition size, PageRank/ergodic frequency,
   //   and exit probability between vertices w/o teleportation
-  def apply( network: Network, logFile: LogFile ): ( Network, GraphFrame )
-
-  // calculate code length given modular properties
-  def calCodeLength( modules: DataFrame ) = {
-    def plogp( x: Column ) = CommunityDetection.plogp(x)
-    sqlc.udf.register( "plogp", CommunityDetection.plogp )
-    if( modules.groupBy.count > 1 ) {
-      val plogp_sum_q = CommunityDetection.plogp( modules.groupBy.sum('exitq)
-        .head.getDouble(0) )
-      val sum_plogp_q = -2*modules.select( plogp('exitq) ).groupBy.sum
-        .head.getDouble(0)
-      val sum_plogp_p = -modules.select( plogp('prob) ).groupBy.sum
-        .head.getDouble(0)
-      val sum_plogp_pq = modules.select( plogp('prob+'exitq) ).groupBy.sum
-        .head.getDouble(0)
-      plogp_sum_q +sum_plogp_q +sum_plogp_p +sum_plogp_pq
-    }
-    else
-    // if the entire graph is merged into one module,
-    // there is easy calculation
-      -ergodicFreqSum
-  }
+  def apply(
+    network: Network, graph: GraphFrame,
+    logFile: LogFile
+  ): ( Network, GraphFrame )
 }
 
-  /***************************************************************************
-   * static functions for code length calculation
-   * and simple factory to return merge algorithm object
-   ***************************************************************************/
 object CommunityDetection {
   /***************************************************************************
-   * simple merge algorithm factory
+   * simple merge algorithm factory to return CommunityDetection object
    ***************************************************************************/
   def choose( algo: String ): CommunityDetection =
     if( algo == "InfoMap" )
@@ -61,39 +39,78 @@ object CommunityDetection {
 
   /***************************************************************************
    * math functions to calculate code length
-   * these are all static, pure functions
+   * these are all pure functions
    * so that given the same function arguments
    * will always return the same result
    ***************************************************************************/
 
-  def calQ( nodeNumber: Long, n: Long, p: Double, tele: Double, w: Double )
-    = tele*(nodeNumber-n)/(nodeNumber-1)*p +(1-tele)*w
-
-  def calDeltaL(
-    nodeNumber: Long,
-    n1: Long, n2: Long, p1: Double, p2: Double,
-    tele: Double, w12: Double,
-    qi_sum: Double, q1: Double, q2: Double
-  ) = {
-    val q12 = calQ( nodeNumber, n1+n2, p1+p2, tele, w12 )
-    val delta_q = q12-q1-q2
-    val deltaLi = (
-      -2*plogp(q12) +2*plogp(q1) +2*plogp(q2)
-      +plogp(p1+p2+q12) -plogp(p1+q1) -plogp(p2+q2)
-    )
-    val deltaL =
-      if( qi_sum>0 && qi_sum+delta_q>0 )
-        deltaLi
-        +CommunityDetection.plogp( qi_sum +delta_q )
-        -CommunityDetection.plogp( qi_sum )
-      else
-        0
-    ( deltaLi, deltaL )
+  // calculate code length given modular properties
+  // and the sum_node of plogp(prob) (can only be calculated with full graph)
+  def calCodelength( modules: DataFrame, probSum: Double ) = {
+    if( modules.groupBy.count > 1 ) {
+      val plogp_sum_q = plogp( modules.groupBy.sum('exitq)
+        .head.getDouble(0) )
+      val sum_plogp_q = -2*modules.select( plogp('exitq) ).groupBy.sum('exitq)
+        .head.getDouble(0)
+      val sum_plogp_pq = modules.select( plogp('prob+'exitq) as "pq" )
+        .groupBy.sum('pq)
+        .head.getDouble(0)
+      plogp_sum_q +sum_plogp_q +probSum +sum_plogp_pq
+    }
+    else
+    // if the entire graph is merged into one module,
+    // there is easy calculation
+      -probSum
   }
 
-  /***************************************************************************
-   * math function of plogp(x) for calculation of code length
-   ***************************************************************************/
+  // calculates the change in code length
+  // when two modules are merged
+  def calDeltaL(
+    nodeNumber: Long,
+    n1: Column, n2: Column, p1: Column, p2: Column,
+    tele: Column, qi_sum: Column, q1: Column, q2: Column,
+    w12: Column
+  ) = {
+    val q12 = calQ( nodeNumber, n1+n2, p1+p2, tele, w12 )
+    calDeltaL_v(qi_sum,q1,q2,q12) +calDeltaL_nv(p1,p2,q1,q2,q12)
+  }
+
+  // volatile term of change in code length
+  // argument qi_sum IS a dependency
+  def calDeltaL_v( qi_sum: Column, q1: Column, q2: Column, q12: Column ) = (
+    +plogp( qi_sum +q12-q1-q2 )
+    -plogp( qi_sum )
+  )
+
+  // NON-volatile term of change in code length
+  // argument qi_sum is NOT a dependency
+  def calDeltaL_nv(
+    p1: Column, p2: Column,
+    q1: Column, q2: Column, q12: Column
+  ) = (
+    -2*plogp(q12) +2*plogp(q1) +2*plogp(q2)
+    +plogp(p1+p2+q12) -plogp(p1+q1) -plogp(p2+q2)
+  )
+
+  // calculates the probabilty of exiting a module (including teleportation)
+  // given the teleportation probability,
+  // exit probability w/o teleportation,
+  // modular size and ergodic frequency
+  def calQ(
+    tele: Double
+    nodeNumber: Long, size: Long, prob: Double,
+    exitw: Double
+  ): Double = (
+    tele *(nodeNumber-size) /(nodeNumber-1) *prob // teleportation
+    +(1-tele) *exitw                              // random walk
+  )
+
+  // simple functions for codelength calculation
+  // duplicate each function, each with argument type Double and Column
+  // so that they can be applied to normal Double
+  // or within DataFrame.select()
   def log( double: Double ) = Math.log(double)/Math.log(2.0)
+  def log( double: Column ) = Math.log(double)/Math.log(2.0)
   def plogp( double: Double ) = double*log(double)
+  def plogp( double: Column ) = double*log(double)
 }
