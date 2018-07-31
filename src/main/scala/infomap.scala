@@ -21,11 +21,19 @@ sealed class InfoMap extends MergeAlgo
     // the modular properties of the two vertices
     // and change in code length based on the hypothetical modular merge
     // | idx1 , idx2 , n1 , n2 , p1 , p2 , w1 , w2 , w12 , q1 , q2 , dL |
-    // where n = size
-    //       p = prob
-    //       w = exitw
-    //       q = exitq
-    //      dL = change in codelength
+    // where  n = size
+    //        p = prob
+    //        w = exitw
+    //        q = exitq
+    //       dL = non-volatile change in codelength, which deserves more note:
+    //
+    // preferably, especially in big graph, during iterations of the algorithm
+    // only a subset of the table needs to be calculated
+    // however, the math expression of dL is a sum of two parts:
+    // one that depends on qi_sum and one that does not
+    // the one that does, will change after every merge/iteration
+    // hence, it is "volatile" cannot be efficiently stored in the table
+    // whereas it is advantageous to store the "non-volatile" one
     val edgeList = generateEdgeList( network, qi_sum )
 
   /***************************************************************************
@@ -54,10 +62,9 @@ sealed class InfoMap extends MergeAlgo
         val(m1,m2,n1,n2,p1,p2,w1,w2,w1_2,q1,q2,dL) = findMerge(edgeList)
         val(m12,n12,p12,w12,q12) =
           calNewcal(m1,m2,n1,n2,p1,p2,w1,w2,w1_2)
-        val new_qi_sum = qi_sum +q12 -q1 -q2
         val deltaL = InfoMap.calDeltaL( deltaLi12, qi_sum, q1, q2, q12)
+        val new_qi_sum = qi_sum +q12 -q1 -q2
         val newCodelength = network.codelength +deltaL
-        ///////////////////////          ISSUE HERE (qi_sum or new_qi_sum?)
 
         if( deltaL == 0 ) // iff the entire graph is merged into one module
         {
@@ -92,10 +99,6 @@ sealed class InfoMap extends MergeAlgo
           }
         }
       }
-  /***************************************************************************
-   * routine finished, below are function definitions and tail recursive call
-   ***************************************************************************/
-
   /***************************************************************************
    * routine finished, below are function definitions and tail recursive call
    ***************************************************************************/
@@ -157,11 +160,7 @@ sealed class InfoMap extends MergeAlgo
         )
         // calculate dL
         .select( 'idx1, 'idx2, 'n1, 'n2, 'p1, 'p2, 'w1, 'w2, 'w1_2, 'q1, 'q2,
-          CommunityDetection.calDeltaL(
-            network.nodeNumber, n1, n2, p1, p2,
-            network.tele, qi_sum, 'q1, 'q2,
-            'w_12
-          ) as "dL"
+          CommunityDetection.calDeltaL_nv( 'p1, 'p2, 'q1, 'q2, 'q12 ) as "dL"
         )
 
         // simple wrapper to calculate Q as a Spark SQL function
@@ -259,7 +258,8 @@ sealed class InfoMap extends MergeAlgo
           when( 'idx2===m1 || 'idx2===m2, w12 ).otherwise('w2),
           'w_12,
           when( 'idx1===m1 || 'idx1===m2, q12 ).otherwise('q1),
-          when( 'idx2===m1 || 'idx2===m2, q12 ).otherwise('q2)
+          when( 'idx2===m1 || 'idx2===m2, q12 ).otherwise('q2),
+          when( 'idx2===m1 || 'idx2===m2, 'jlk ).otherwise('dL)
         )
         // aggregate edge weights
         .groupBy('idx1,'idx2).sum('w1_2)
