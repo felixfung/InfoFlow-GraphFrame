@@ -40,8 +40,12 @@ sealed class InfoFlow extends CommunityDetection
       logFile.save( network, graph, "net"+loop.toString, true )
 
       // truncate RDD lineage every ten loops
-      if( loop%10 == 0 )
-        network.localCheckpoint
+      if( loop%10 == 0 ) {
+        Network.trim( network.graph.vertices )
+        Network.trim( network.graph.edges )
+        Network.trim( graph.vertices )
+        Network.trim( graph.edges )
+      }
 
       // calculate the deltaL table for all possible merges
       // | idx1 , idx2 , dL |
@@ -128,7 +132,6 @@ sealed class InfoFlow extends CommunityDetection
         .join( network.graph.vertices.alias("e2"),
           col("e1.idx1")===col("e2.idx2") && col("e1.idx2")===col("e2.idx1"),
           "left_outer" )
-        .groupBy(
         // create table of change in code length of all possible merges
         .select(
           'idx1, 'idx2,
