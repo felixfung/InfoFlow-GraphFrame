@@ -75,6 +75,25 @@ object CommunityDetection {
     calDeltaL_v(qi_sum,q1,q2,q12) +calDeltaL_nv(p1,p2,q1,q2,q12)
   }
 
+  // calculates the probabilty of exiting a module (including teleportation)
+  def calQ(
+    tele: Double
+    nodeNumber: Long, size: Long, prob: Double,
+    exitw: Double
+  ): Double = (
+    tele *(nodeNumber-size) /(nodeNumber-1) *prob // teleportation
+    +(1-tele) *exitw                              // random walk
+  )
+
+  /***************************************************************************
+   * when calculating the code length
+   * one component depends on qi_sum, one does not
+   * so that one is "volatile" and needs recalculating per iteration
+   * while the other is "non-volatile"
+   * to save computation, divide these into different functions
+   * to get deltaL, simply add the two together
+   ***************************************************************************/
+
   // volatile term of change in code length
   // argument qi_sum IS a dependency
   def calDeltaL_v( qi_sum: Column, q1: Column, q2: Column, q12: Column ) = (
@@ -92,23 +111,12 @@ object CommunityDetection {
     +plogp(p1+p2+q12) -plogp(p1+q1) -plogp(p2+q2)
   )
 
-  // calculates the probabilty of exiting a module (including teleportation)
-  // given the teleportation probability,
-  // exit probability w/o teleportation,
-  // modular size and ergodic frequency
-  def calQ(
-    tele: Double
-    nodeNumber: Long, size: Long, prob: Double,
-    exitw: Double
-  ): Double = (
-    tele *(nodeNumber-size) /(nodeNumber-1) *prob // teleportation
-    +(1-tele) *exitw                              // random walk
-  )
-
-  // simple functions for codelength calculation
-  // duplicate each function, each with argument type Double and Column
-  // so that they can be applied to normal Double
-  // or within DataFrame.select()
+  /***************************************************************************
+   * simple functions for codelength calculation
+   * duplicate each function, each with argument type Double and Column
+   * so that they can be applied to normal Double
+   * or within DataFrame.select()
+   ***************************************************************************/
   def log( double: Double ) = Math.log(double)/Math.log(2.0)
   def log( double: Column ) = Math.log(double)/Math.log(2.0)
   def plogp( double: Double ) = double*log(double)
