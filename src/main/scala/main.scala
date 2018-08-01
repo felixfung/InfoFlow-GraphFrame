@@ -17,7 +17,6 @@ object InfoFlowMain {
   /***************************************************************************
    * read in config file
    ***************************************************************************/
-
     // check argument size
     if( args.size > 1 ) {
       println("InfoFlow: requires 0-1 arguments:")
@@ -31,7 +30,9 @@ object InfoFlowMain {
       else /*args.size==1*/ args(0)
     val config = new Config(configFilename)
 
-    // initialize parameters from config file
+  /***************************************************************************
+   * initialize parameters from config file
+   ***************************************************************************/
     val master = config.master
     val graphFile = config.graphFile
     val communityDetection = CommunityDetection.choose( config.algorithm )
