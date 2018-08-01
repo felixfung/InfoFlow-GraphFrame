@@ -20,20 +20,13 @@ sealed class InfoMap extends MergeAlgo
     // the table that lists all possible merges,
     // the modular properties of the two vertices
     // and change in code length based on the hypothetical modular merge
-    // | idx1 , idx2 , n1 , n2 , p1 , p2 , w1 , w2 , w12 , q1 , q2 , dL |
+    // | idx1 , idx2 , n1 , n2 , p1 , p2 , w1 , w2 , w1221 , q1 , q2 , dL |
     // where  n = size
     //        p = prob
     //        w = exitw
+    //    w1221 = prob. going idx1->idx2 +prob. going idx2->idx1
     //        q = exitq
-    //       dL = non-volatile change in codelength, which deserves more note:
-    //
-    // preferably, especially in big graph, during iterations of the algorithm
-    // only a subset of the table needs to be calculated
-    // however, the math expression of dL is a sum of two parts:
-    // one that depends on qi_sum and one that does not
-    // the one that does, will change after every merge/iteration
-    // hence, it is "volatile" cannot be efficiently stored in the table
-    // whereas it is advantageous to store the "non-volatile" one
+    //       dL = non-volatile change in codelength
     val edgeList = generateEdgeList( network, qi_sum )
 
   /***************************************************************************
@@ -59,25 +52,26 @@ sealed class InfoMap extends MergeAlgo
       if( table.count == 0 )
         terminate( loop, network, graph )
       else {
-        val(m1,m2,n1,n2,p1,p2,w1,w2,w1_2,q1,q2,dL) = findMerge(edgeList)
-        val(m12,n12,p12,w12,q12) =
-          calNewcal(m1,m2,n1,n2,p1,p2,w1,w2,w1_2)
-        val deltaL = InfoMap.calDeltaL( deltaLi12, qi_sum, q1, q2, q12)
-        val new_qi_sum = qi_sum +q12 -q1 -q2
-        val newCodelength = network.codelength +deltaL
+        val (m1,m2,n1,n2,p1,p2,w1,w2,w1221,q1,q2,deltaL) = findMerge(edgeList)
+        val (m12,n12,p12,w12,q12) = calNewcal(m1,m2,n1,n2,p1,p2,w1,w2,w1221)
 
         if( deltaL == 0 ) // iff the entire graph is merged into one module
         {
           if( network.codeLength < -network.ergodicFreqSum )
             terminate( loop, network, graph )
           else {
-            graph.select('idx,'name,1) // all nodes are module 1
-            terminate( loop, network, graph )
+            val newGraph = graph.select('idx,'name,1)
+            val newVertices = List( (1,1,0,0) ).toDF('idx,'prob,'exitw,'exitq)
+            val newEdges = network.graph.edges.filer(false)
+            val newNetwork = Network( network.tele, network.nodeNumber,
+              GraphFrame( newVertices, newEdges )
+              probSum, -network.ergodicFreqSum )
+            terminate( loop, newNetwork, newGraph )
           }
         }
         else if( deltaL > 0 )
           terminate( loop, network, graph )
-        else { // otherwise actually merge
+        else { // merge two modules
           // log merging details
           logFile.write(
             "Merge " +loop.toString
@@ -88,17 +82,19 @@ sealed class InfoMap extends MergeAlgo
           val newGraph = graph.select( 'idx, 'name
             when( 'module===m1 || 'module===m2, m12 ).otherwise('module)
           )
-          val newEdgeList = genEdgeList(edgeList)
+          val newEdgeList = genEdgeList(m1,m2,m12,n12,p12,w12,q12,edgeList)//////////
+          val newCodelength = network.codelength +deltaL
           val newNetwork = {
             val mMod = m12
             val mDel = if( m1==mMod ) m2 else m1
             calNewNetwork(
               mMod, mDel, n12, p12, w12, q12,
-              network, newEdgeList
+              network, newEdgeList, newCodelength
             )
           }
         }
       }
+
   /***************************************************************************
    * routine finished, below are function definitions and tail recursive call
    ***************************************************************************/
@@ -121,10 +117,11 @@ sealed class InfoMap extends MergeAlgo
 
   /***************************************************************************
    * generate edgeList
-   * | idx1 , idx2 , n1 , n2 , p1 , p2 , w1 , w2 , w12 , q1 , q2 , dL |
-   * where n <= size
+   * | idx1 , idx2 , n1 , n2 , p1 , p2 , w1 , w2 , w1221 , q1 , q2 , dL |
+   * where n <=> size
    *       p <=> prob
    *       w <=> exitw
+   *   w1221 <=> prob. going idx1->idx2 +prob. going idx2->idx1
    *       q <=> exitq
    *      dL <=> change in codelength
    ***************************************************************************/
@@ -144,33 +141,32 @@ sealed class InfoMap extends MergeAlgo
           col("m1.size") as "n1", col("m2.size") as "n2",
           col("m1.prob") as "p1", col("m2.prob") as "p2",
           col("m1.exitw") as "w1", col("m2.exitw") as "w2",
-          // calculation of the exit probability
-          // of hypothetically merged module between m1 and m2
-          // = w1 + w2 -w(m1->m2) -w(m2->m1)
-          when( col("e2.exitw").isNotNull,
-            col("m1.exitw")+col("m2.exitw")-col("e1.exitw")-col("e2.exitw")
-          ).otherwise(
-            col("m1.exitw")+col("m2.exitw")-col("e1.exitw")
-          ) as "w12"
+          // prob. going between m1 and m2
+          // needed for calculation of w12, the exitw of merged module of m1,m2
+          // w1221 is needed because subsequent exit probability calculations
+          // need to aggregate w1221's
+          when( col("e2.exitw").isNotNull, col("e1.exitw") +col("e2.exitw") )
+          .otherwise( col("e1.exitw") ) as "w1221"
         )
         // calculate q1, q2
-        .select( 'idx1, 'idx2, 'n1, 'n2, 'p1, 'p2, 'w1, 'w2, 'w1_2,
+        .select( 'idx1, 'idx2, 'n1, 'n2, 'p1, 'p2, 'w1, 'w2, 'w1221,
           calQ( network.tele, network.nodeNumber, n1, p1, w1 ) as "q1",
           calQ( network.tele, network.nodeNumber, n2, p2, w2 ) as "q2"
         )
         // calculate dL
-        .select( 'idx1, 'idx2, 'n1, 'n2, 'p1, 'p2, 'w1, 'w2, 'w1_2, 'q1, 'q2,
-          CommunityDetection.calDeltaL_nv( 'p1, 'p2, 'q1, 'q2, 'q12 ) as "dL"
+        .select( 'idx1, 'idx2, 'n1, 'n2, 'p1, 'p2, 'w1, 'w2, 'w1221, 'q1, 'q2,
+          CommunityDetection.calDeltaL(
+            network.nodeNumber, 'n1, 'n2, 'p1, 'p2,
+            network.tele, qi_sum, 'q1, 'q2, ('w1 +'w2 -'w1221)
+          ) as "dL"
         )
 
-        // simple wrapper to calculate Q as a Spark SQL function
+        // simple wrappers to calculate Q as a Spark SQL function
         def calQ(
           tele: Column
           nodeNumber: Column, size: Column, prob: Column,
           exitw: Column
-        ): Column = CommunityDetection.calQ(
-          tele, nodeNumber, size, prob, exitw
-        )
+        ): Column = CommunityDetection.calQ(tele,nodeNumber,size,prob,exitw)
       }
 
   /***************************************************************************
@@ -187,11 +183,11 @@ sealed class InfoMap extends MergeAlgo
         .alias("select").join( edgeList.alias("b"),
           col("select.idx1")===col("b.idx1") && col("select.dL")===col("b.dL")
         )
-        .select('idx1,'idx2,'n1,'n2,'p1,'p2,'w1,'w2,'w1_2,'q1,'q2,'dL)
+        .select('idx1,'idx2,'n1,'n2,'p1,'p2,'w1,'w2,'w1221,'q1,'q2,'dL)
         .head
         match {
-          case Row(m1,m2,n1,n2,p1,p2,w1,w2,w12,q1,q2,dL)
-          => (m1,m2,n1,n2,p1,p2,w1,w2,w12,q1,q2,dL)
+          case Row(m1,m2,n1,n2,p1,p2,w1,w2,w1221,q1,q2,dL)
+          => (m1,m2,n1,n2,p1,p2,w1,w2,w1221,q1,q2,dL)
         }
       }
 
@@ -200,7 +196,7 @@ sealed class InfoMap extends MergeAlgo
    ***************************************************************************/
       def calNewcal(
         m1: Long, m2: Long, n1: Long, n2: Long,
-        p1: Double, p2: Double, w1: Double, w2: Double, w1_2: Double
+        p1: Double, p2: Double, w1: Double, w2: Double, w1221: Double
       ) = {
 
         // the new modular index is the lower one
@@ -210,18 +206,10 @@ sealed class InfoMap extends MergeAlgo
         val n12 = n1 +n2
         val p12 = p1 +p2
 
-        // w12 is the exitw of module m12
-        // w1_2 is the sum of exitw of edges (idx1,idx2) and (idx2,idx1)
-
-        // also needs w2_1 to calculate w12
-        val w2_1 = edgeList.filter( 'idx1===m2 && 'idx2===m1 )
-        .select('w1_2)
-        .head.getDouble(0)
-        val w12 = w1 +w2 -w1_2 -w2_1
         val q12 = CommunityDetection.calQ(
-          network.tele, network.nodeNumber, n12, p12, tele, w12 )
+          network.tele, network.nodeNumber, n12, p12, tele, w1 +w2 -w1221 )
 
-        ( m12, n12, p12, w12, q12 )
+        ( m12, n12, p12, q12, w12 )
       }
 
   /***************************************************************************
@@ -233,7 +221,7 @@ sealed class InfoMap extends MergeAlgo
    ***************************************************************************/
       def genEdgeList(
         m1: Long, m2: Long, m12: Long,
-        n12: Long, p12: Double, w12: Double, w1_2: Double, q12: Double,
+        n12: Long, p12: Double, w12: Double,, q12: Double,
         edgeList: DataFrame
       ): DataFrame = {
         edgeList
@@ -246,7 +234,7 @@ sealed class InfoMap extends MergeAlgo
         )
         // when one of idx1 or idx2 hit m1 or m2,
         // update its modular property
-        // and recalculate w12
+        // and recalculate dL
         .select(
           when( 'idx1===m1 || 'idx1===m2, m12 ).otherwise('idx1),
           when( 'idx2===m1 || 'idx2===m2, m12 ).otherwise('idx2),
@@ -256,21 +244,28 @@ sealed class InfoMap extends MergeAlgo
           when( 'idx2===m1 || 'idx2===m2, p12 ).otherwise('p2),
           when( 'idx1===m1 || 'idx1===m2, w12 ).otherwise('w1),
           when( 'idx2===m1 || 'idx2===m2, w12 ).otherwise('w2),
-          'w_12,
+          'w1221,
           when( 'idx1===m1 || 'idx1===m2, q12 ).otherwise('q1),
           when( 'idx2===m1 || 'idx2===m2, q12 ).otherwise('q2),
-          when( 'idx2===m1 || 'idx2===m2, 'jlk ).otherwise('dL)
+          'dL
         )
-        // aggregate edge weights
-        .groupBy('idx1,'idx2).sum('w1_2)
+        // aggregate edge exit probabilities
+        .groupBy('idx1,'idx2).sum('w1221)
+        .select('idx1,'idx2,'n1,'n2,'p1,'p2,'w1,'w2,'w1221,'q1,'q2,
+          CommunityDetection.calDeltaL(
+            network.nodeNumber, 'n1, 'n2, 'p1, 'p2,
+            network.tel, qi_sum, 'q1, 'q2, ('w1+'w2-'w1221)
+          )
+        )
       }
 
   /***************************************************************************
    * network object is actually not needed for InfoMap recursive calculation
    ***************************************************************************/
       def calNewNetwork(
-        mMod: Long, mDel: Long, n12: Long, p12: Long, w12: Double, q12: Double,
-        network: Network, newEdgeList: DataFrame
+        mMod: Long, mDel: Long, n12: Long, p12: Long,
+        w1221: Double, q12: Double,
+        network: Network, newEdgeList: DataFrame, newCodelength: Double
       ): Network = {
 
         val newModules = network.graph.vertices
@@ -284,18 +279,19 @@ sealed class InfoMap extends MergeAlgo
           when( 'idx===mMod, q12 ).otherwise('exitq)
         )
 
-        val newEdges = newEdgeList.select('idx1,'idx2,'w1_2)
+        val newEdges = newEdgeList.select('idx1,'idx2,'w1221)
 
         Network(
           network.nodeNumber, network.tele,
           newModules, newEdges,
-          newCodeLength
+          newCodelength
         )
       }
 
   /***************************************************************************
    * recursive call
    ***************************************************************************/
+      val new_qi_sum = qi_sum +q12 -q1 -q2
       recursiveMerge( loop+1, newNetwork, newGraph, new_qi_sum, newEdgeList )
     }
     recursiveMerge( 0, network, graph, qi_sum, edgeList )
