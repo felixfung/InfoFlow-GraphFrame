@@ -251,6 +251,7 @@ sealed class InfoMap extends MergeAlgo
         )
         // aggregate edge exit probabilities
         .groupBy('idx1,'idx2).sum('w1221)
+        // calculate dL
         .select('idx1,'idx2,'n1,'n2,'p1,'p2,'w1,'w2,'w1221,'q1,'q2,
           CommunityDetection.calDeltaL(
             network.nodeNumber, 'n1, 'n2, 'p1, 'p2,
