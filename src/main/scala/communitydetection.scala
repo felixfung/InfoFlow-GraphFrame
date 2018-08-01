@@ -72,7 +72,13 @@ object CommunityDetection {
     w12: Column
   ) = {
     val q12 = calQ( nodeNumber, n1+n2, p1+p2, tele, w12 )
-    calDeltaL_v(qi_sum,q1,q2,q12) +calDeltaL_nv(p1,p2,q1,q2,q12)
+    //calDeltaL_v(qi_sum,q1,q2,q12) +calDeltaL_nv(p1,p2,q1,q2,q12)
+    (
+      +plogp( qi_sum +q12-q1-q2 )
+      -plogp( qi_sum )
+      -2*plogp(q12) +2*plogp(q1) +2*plogp(q2)
+      +plogp(p1+p2+q12) -plogp(p1+q1) -plogp(p2+q2)
+    )
   }
 
   // calculates the probabilty of exiting a module (including teleportation)
@@ -83,32 +89,6 @@ object CommunityDetection {
   ): Double = (
     tele *(nodeNumber-size) /(nodeNumber-1) *prob // teleportation
     +(1-tele) *exitw                              // random walk
-  )
-
-  /***************************************************************************
-   * when calculating the code length
-   * one component depends on qi_sum, one does not
-   * so that one is "volatile" and needs recalculating per iteration
-   * while the other is "non-volatile"
-   * to save computation, divide these into different functions
-   * to get deltaL, simply add the two together
-   ***************************************************************************/
-
-  // volatile term of change in code length
-  // argument qi_sum IS a dependency
-  def calDeltaL_v( qi_sum: Column, q1: Column, q2: Column, q12: Column ) = (
-    +plogp( qi_sum +q12-q1-q2 )
-    -plogp( qi_sum )
-  )
-
-  // NON-volatile term of change in code length
-  // argument qi_sum is NOT a dependency
-  def calDeltaL_nv(
-    p1: Column, p2: Column,
-    q1: Column, q2: Column, q12: Column
-  ) = (
-    -2*plogp(q12) +2*plogp(q1) +2*plogp(q2)
-    +plogp(p1+p2+q12) -plogp(p1+q1) -plogp(p2+q2)
   )
 
   /***************************************************************************
