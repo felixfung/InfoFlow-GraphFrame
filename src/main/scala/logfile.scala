@@ -13,6 +13,8 @@ import java.io._
    * which provides a mapping from each node to each module index
    * and the names of each node
    * to be used in conjunction with the partitioning data
+   *     vertices: | idx , name , module |
+   *     edges:    | from , to , exit prob. w/o tele |
    *
    * File formats:
    * merging progress data is written to a plain text file
@@ -31,11 +33,11 @@ import java.io._
 sealed class LogFile(
   /***************************************************************************
    * path names, INCLUDING file names and extensions
-   * if the path name is empty then the associated files are not saved
+   * if caller does not want to save in format, provide empty path
    ***************************************************************************/
   val pathLog:       String,   // plain text file path for merge progress data
   val pathParquet:   String,   // parquet file path for graph data
-  val pathText:      String,   // RDD text file path for graph data
+  val pathRDD:       String,   // RDD text file path for graph data
   val pathJSon:      String,   // local JSON file path for graph data
 
   /***************************************************************************
@@ -139,18 +141,18 @@ sealed class LogFile(
 
       saveDF( !pathParquet.isEmpty, savePartition, saveName,
         debugging, pathParquet, debugExt )
-      saveDF( !pathText.isEmpty, savePartition, saveName,
-        debugging, pathText, debugExt )
+      saveDF( !pathRDD.isEmpty, savePartition, saveName,
+        debugging, pathRDD, debugExt )
 
-      /*if( !pathText.isEmpty ) {
-        saveStruct( true, pathText, "-vertices",
-          LogFile.saveText, network.vertices )
-        saveStruct( true, pathText, "-edges",
-          LogFile.saveText, network.edges )
-        saveStruct( savePartition, pathText, "-partition",
-          LogFile.saveText, network.partition )
-        saveStruct( saveName, pathText, "-name",
-          LogFile.saveText, network.name )
+      /*if( !pathRDD.isEmpty ) {
+        saveStruct( true, pathRDD, "-vertices",
+          LogFile.saveRDD, network.vertices )
+        saveStruct( true, pathRDD, "-edges",
+          LogFile.saveRDD, network.edges )
+        saveStruct( savePartition, pathRDD, "-partition",
+          LogFile.saveRDD, network.partition )
+        saveStruct( saveName, pathRDD, "-name",
+          LogFile.saveRDD, network.name )
       }*/
 
   /***************************************************************************
@@ -164,7 +166,7 @@ object LogFile
 {
   def saveParquet( filename: String, struct: DataFrame ): Unit
   = struct.write.parquet(filename) // check syntax
-  def saveText( filename: String, struct: DataFrame ): Unit
+  def saveRDD( filename: String, struct: DataFrame ): Unit
   = struct.saveAsTextFile(filename)
 
   def saveJSon( partition: Partition, id: String ) = ???

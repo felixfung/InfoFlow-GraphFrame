@@ -1,3 +1,7 @@
+  /***************************************************************************
+   * main function: read in config file, solve, save, exit
+   ***************************************************************************/
+
 import org.apache.spark.SparkContext
 import org.apache.spark.SparkContext._
 import org.apache.spark.SparkConf
@@ -22,19 +26,24 @@ object InfoFlowMain {
     }
 
     // use default or alternative config file name
-    val configFileName =
+    val configFilename =
       if( args.size == 0 ) "config.json"
       else /*args.size==1*/ args(0)
-    val config = new Config(configFileName)
+    val config = new Config(configFilename)
 
     // initialize parameters from config file
+    val master = config.master
     val graphFile = config.graphFile
     val communityDetection = CommunityDetection.choose( config.algorithm )
+    val tele = config.tele
     val logFile = new LogFile(
-      config.logDir,
-      config.logWriteLog, config.rddText,
-      config.rddJSon, config.logSteps,
-      false
+      config.logFile.pathLog,
+      config.logFile.pathParquet,
+      config.logFile.pathRDD,
+      config.logFile.pathJson,
+      config.logFile.savePartition,
+      config.logFile.saveName,
+      config.logFile.debug,
     )
 
   /***************************************************************************
@@ -49,15 +58,11 @@ object InfoFlowMain {
     val sqlContext = new org.apache.spark.sql.SQLContext(sc)
 
   /***************************************************************************
-   * read file and solve
+   * read, solve, save
    ***************************************************************************/
-    val graph0 = GraphFile.openFile( sqlContext, pajekFile ).graph
-    val net0 = Network.init( graph0, config.tele )
+    val graph0 = GraphFile.openFile( sqlContext, graphFile ).graph
+    val net0 = Network.init( graph0, tele )
     val (net1,graph1) = communityDetection( net0, graph0, logFile )
-
-  /***************************************************************************
-   * save graph
-   ***************************************************************************/
     logFile.save( net1, graph1, false, "" )
 
   /***************************************************************************
