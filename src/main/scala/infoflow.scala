@@ -21,6 +21,9 @@
    * and called in the main routine
    ***************************************************************************/
 
+import org.apache.spark.sql._
+import org.graphframes._
+
 sealed class InfoFlow extends CommunityDetection
 {
   def apply( network: Network, graph: GraphFrame, logFile: LogFile ):
@@ -36,8 +39,8 @@ sealed class InfoFlow extends CommunityDetection
 
       // log current state
       logFile.write( "State " +loop.toString+": "
-        +"code length " +network.codelength.toString +"\n" )
-      logFile.save( network, graph, "net"+loop.toString, true )
+        +"code length " +network.codelength.toString +"\n", false )
+      logFile.save( network.graph, graph, true, "net"+loop.toString )
 
       // truncate RDD lineage every ten loops
       if( loop%10 == 0 ) {
@@ -72,9 +75,9 @@ sealed class InfoFlow extends CommunityDetection
       //     newPartition nodes are all original nodes
       // (2) moduleMap used only within this function for further calculations
       //     newPartition saved to graph, which is part of final result
-      val newPartition = calNewPartition( moduleMap, network.partition )
+      val newGraphVertices = calNewPartition( moduleMap, graph.vertices )
       // update graph partitioning
-      val newGraph = calNewGraph( graph, newPartition )
+      val newGraph = GraphFrame( newGraphVertices, graph.edges )
 
       // intermediate edges
       // map the associated modules into new module indices
@@ -88,7 +91,7 @@ sealed class InfoFlow extends CommunityDetection
       .cache
 
       val newModules = calNewModules( network, moduleMap, interEdges )
-      val newNodeNumber = newModules.groupBy.count
+      val newNodeNumber = newModules.groupBy().count
 
       // calculate new code length, and terminate if bigger than old
       val newCodelength = CommunityDetection.calCodelength(
@@ -98,13 +101,18 @@ sealed class InfoFlow extends CommunityDetection
 
       // logging: merge details
       logFile.write( "Merge " +(loop+1).toString
-        +": merging " +network.vertices.count.toString
-        +" modules into " +newModules.count.toString +" modules\n"
+        +": merging " +network.graph.vertices.count.toString
+        +" modules into " +newModules.count.toString +" modules\n",
+        false
       )
 
       // calculate new network
       val newEdges = interEdges.filter( 'idx1 != 'idx2 )
-      val newNetwork = calNewNetwork( network, newCodelength, )
+      val newNetwork = calNewNetwork(
+        network,
+        newCodelength,
+        newModules, newEdges
+      )
 
       // routine finished after this, tail recursive function call next
       // with calculation function definitions below
@@ -113,7 +121,9 @@ sealed class InfoFlow extends CommunityDetection
    * termination routine, log then return
    ***************************************************************************/
       def terminate( loop: Long, network: Network, graph: GraphFrame ) = {
-        logFile.write( "Merging terminates after " +loop.toString +" merges" )
+        logFile.write(
+          "Merging terminates after " +loop.toString +" merges\n",
+          false )
         logFile.close
         ( network, graph )
       }
@@ -123,7 +133,7 @@ sealed class InfoFlow extends CommunityDetection
    * | idx1 , idx2 , dL |
    ***************************************************************************/
       def calDeltaL( network: Network ): DataFrame = {
-        val qi_sum = network.vertices.groupBy.sum('exitq)
+        val qi_sum = network.graph.vertices.groupBy().sum('exitq)
         network.graph.edges.alias("e1")
         // get all modular properties from "idx1" and "idx2"
         .join( network.graph.vertices.alias('m1), 'idx1 === col("m1.idx") )
@@ -218,23 +228,15 @@ sealed class InfoFlow extends CommunityDetection
    *       newPartition saved to graph, which is part of final result
    * | idx , module |
    ***************************************************************************/
-      def calNewPartition( moduleMap: DataFrame, partition: DataFrame ):
+      def calNewPartition( moduleMap: DataFrame, graphVertices: DataFrame ):
       DataFrame = {
-        partition.join( moduleMap, 'node === 'idx, "left_outer" )
+        graphVertices.alias("original")
+        .join( moduleMap.alias("new"), 'idx, "left_outer" )
         .select( 'node,
-          when( 'idx.isNotNull, "moduleMap.module" )
-         .otherwise( "partition.module" )
+          when( 'idx.isNotNull, "new.module" )
+         .otherwise( "original.module" )
         )
       }
-
-  /***************************************************************************
-   * new graph, just update new partitioning, everything else untouched
-   ***************************************************************************/
-      def calNewGraph( graph: GraphFrame, partition: DataFrame ):
-      GraphFrame = GraphFrame(
-        graph.vertices.drop('module).join( newPartition, 'idx ),
-        graph.edges
-      )
 
   /***************************************************************************
    * intermediate edges
@@ -264,12 +266,12 @@ sealed class InfoFlow extends CommunityDetection
    * modular properties calculations
    ***************************************************************************/
       def calNewModules(
-        network: Network, moduleMap: DataFrame interEdges: DataFrame
+        network: Network, moduleMap: DataFrame, interEdges: DataFrame
       ): DataFrame = {
         // aggregate size, prob, exitw over the same modular index
         // for size and prob, that gives the final result
         // for exitw, we have to subtract intramodular edges in the next step
-        val sumOnly = network.vertices
+        val sumOnly = network.graph.vertices
         // map to new module index
         .join( moduleMap, 'idx )
         // aggregate
@@ -293,7 +295,7 @@ sealed class InfoFlow extends CommunityDetection
           // subtract intramodular edges from modular exit prob
           // if former exists
           when( col("e.exitw").isNotNull, col("m.exitw") -col("m.exitw") )
-          .otherwise( col("m.exitw") ) as "exitw",
+          .otherwise( col("m.exitw") ) as "exitw"
         )
         .select( 'idx, 'size, 'prob, 'exitw,
           // calculation of exitq
@@ -305,7 +307,7 @@ sealed class InfoFlow extends CommunityDetection
 
         // simple wrapper to calculate Q as a Spark SQL function
         def calQ(
-          tele: Column
+          tele: Column,
           nodeNumber: Column, size: Column, prob: Column,
           exitw: Column
         ): Column = CommunityDetection.calQ(
@@ -318,7 +320,7 @@ sealed class InfoFlow extends CommunityDetection
    ***************************************************************************/
 
       def calNewNetwork(
-        network: Network, newCodeLength: Double
+        network: Network, newCodeLength: Double,
         newModules: DataFrame, newEdges: DataFrame
       ): Network = {
         val newGraph = GraphFrame( newModules, newEdges )

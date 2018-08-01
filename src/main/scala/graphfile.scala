@@ -7,7 +7,10 @@
    * which can be used to generate Network object for community detection
    ***************************************************************************/
 
-sealed abstract class GraphFile(
+import org.apache.spark.sql._
+import org.graphframes._
+
+abstract class GraphFile(
   sqlContext: SQLContext, filename: String
 )
 {
@@ -18,22 +21,24 @@ sealed abstract class GraphFile(
   val graph: GraphFrame
 }
 
-sealed object GraphFile(
+object GraphFile
 {
   // simple factory to return the appropriate GraphFile reader
   // based on file extension
   def openFile( sqlContext: SQLContext, filename: String ): GraphFile = {
     val extension = filename.split(".").lastOption
-    extension match (
-      None => throw new Exception("Graph file has no file extension")
-      Some(ext) => if( ext.toLowerCase == "net" )
-        new PajekFile( sqlContext, filename )
-      else if( ext.toLowerCase == "pqt" )
-        new ParquetFiles( sqlContext, filename )
-      else
-        throw new Exception(
-          "File must be Pajek net file (.net) or Parquet file (.pqt)"
-        )
-    )
+    extension match {
+      case None => throw new Exception("Graph file has no file extension")
+      case Some(ext) => {
+        if( ext.toLowerCase == "net" )
+          new PajekFile( sqlContext, filename )
+        else if( ext.toLowerCase == "pqt" )
+          new ParquetFiles( sqlContext, filename )
+        else
+          throw new Exception(
+            "File must be Pajek net file (.net) or Parquet file (.pqt)"
+          )
+      }
+    }
   }
 }

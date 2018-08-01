@@ -10,7 +10,10 @@
    *   (2) object factory: again arguably for better code organization
    ***************************************************************************/
 
-sealed abstract class CommunityDetection {
+import org.apache.spark.sql._
+import org.graphframes._
+
+abstract class CommunityDetection {
   // real meet of community detection algorithm
   // Network object holds all relevant community detection variables
   // returns also a GraphFrame of the original graph
@@ -46,14 +49,15 @@ object CommunityDetection {
 
   // calculate code length given modular properties
   // and the sum_node of plogp(prob) (can only be calculated with full graph)
-  def calCodelength( modules: DataFrame, probSum: Double ) = {
-    if( modules.groupBy.count > 1 ) {
-      val plogp_sum_q = plogp( modules.groupBy.sum('exitq)
-        .head.getDouble(0) )
-      val sum_plogp_q = -2*modules.select( plogp('exitq) ).groupBy.sum('exitq)
+  def calCodelength( modules: DataFrame, probSum: Double ): Double = {
+    if( modules.groupBy().count.head.getLong(1) > 1 ) {
+      val plogp_sum_q: Double = plogp( modules.groupBy().sum("exitq")
+        .head ).getDouble(0)
+      val sum_plogp_q = -2*modules.select( plogp(modules.col("exitq")) )
+        .groupBy().sum("exitq")
         .head.getDouble(0)
       val sum_plogp_pq = modules.select( plogp('prob+'exitq) as "pq" )
-        .groupBy.sum('pq)
+        .groupBy().sum('pq)
         .head.getDouble(0)
       plogp_sum_q +sum_plogp_q +probSum +sum_plogp_pq
     }
@@ -68,13 +72,13 @@ object CommunityDetection {
   def calDeltaL(
     nodeNumber: Long,
     n1: Column, n2: Column, p1: Column, p2: Column,
-    tele: Column, qi_sum: Column, q1: Column, q2: Column,
+    tele: Double, qi_sum: Column, q1: Column, q2: Column,
     w12: Column
-  ) = {
-    val q12 = calQ( nodeNumber, n1+n2, p1+p2, tele, w12 )
+  ): Column = {
+    val q12 = calQ( tele, nodeNumber, n1+n2, p1+p2, w12 )
     //calDeltaL_v(qi_sum,q1,q2,q12) +calDeltaL_nv(p1,p2,q1,q2,q12)
     (
-      +plogp( qi_sum +q12-q1-q2 )
+      plogp( qi_sum +q12-q1-q2 )
       -plogp( qi_sum )
       -2*plogp(q12) +2*plogp(q1) +2*plogp(q2)
       +plogp(p1+p2+q12) -plogp(p1+q1) -plogp(p2+q2)
@@ -83,10 +87,10 @@ object CommunityDetection {
 
   // calculates the probabilty of exiting a module (including teleportation)
   def calQ(
-    tele: Double
-    nodeNumber: Long, size: Long, prob: Double,
-    exitw: Double
-  ): Double = (
+    tele: Double,
+    nodeNumber: Long, size: Column, prob: Column,
+    exitw: Column
+  ): Column = (
     tele *(nodeNumber-size) /(nodeNumber-1) *prob // teleportation
     +(1-tele) *exitw                              // random walk
   )
@@ -97,8 +101,10 @@ object CommunityDetection {
    * so that they can be applied to normal Double
    * or within DataFrame.select()
    ***************************************************************************/
-  def log( double: Double ) = Math.log(double)/Math.log(2.0)
-  def log( double: Column ) = Math.log(double)/Math.log(2.0)
-  def plogp( double: Double ) = double*log(double)
-  def plogp( double: Column ) = double*log(double)
+  def plogpd( double: Double ): Double = {
+    def log( double: Column ) = Math.log(double)/Math.log(2.0)
+    double *log( double )
+  }
+  def plogp( double: Column ): Column =
+    plogpd( double.asInstanceOf[Double] )
 }

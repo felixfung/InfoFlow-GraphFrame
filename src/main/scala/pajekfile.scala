@@ -1,13 +1,16 @@
 import scala.io.Source
 import java.io.FileNotFoundException
 
+import org.apache.spark.sql._
+import org.graphframes._
+
   /***************************************************************************
    * Pajek net file reader
    * file is assumed to be local and read in serially
    ***************************************************************************/
 
-sealed class PajekFile extends GraphFile
-( sqlc: SQLContext, val filename: String )
+sealed class PajekFile ( sqlc: SQLContext, val filename: String )
+extends GraphFile( sqlc, filename )
 {
   val graph: GraphFrame = try {
     // graph elements stored as local list
@@ -37,7 +40,7 @@ sealed class PajekFile extends GraphFile
     var lineNumber = 1 // line number in file, used when printing file error
     // read file serially
     for( line <- Source.fromFile(filename).getLines
-      if line.charAt(0) != '\%' // skip comments
+      if line.charAt(0) != '%' // skip comments
     ) {
   /***************************************************************************
    * first, check if line begins with '*'

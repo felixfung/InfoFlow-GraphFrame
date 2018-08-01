@@ -8,6 +8,9 @@
    * given a partitioning mapping each nodal index to a modular index
    ***************************************************************************/
 
+import org.apache.spark.sql._
+import org.graphframes._
+
 sealed case class Network
 (
   tele: Double, // PageRank teleportation chance
@@ -23,7 +26,7 @@ sealed case class Network
   // it can only be calculated with the full graph and not the reduced one
   // therefore it is calculated during Network.init()
   // and stored here
-  probSum: Double
+  probSum: Double,
   codelength: Double // information theoretic entropy
 )
 

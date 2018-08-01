@@ -1,5 +1,3 @@
-import java.io._
-
   /***************************************************************************
    * Helper class to write log merging progress and save graph data
    *
@@ -19,7 +17,7 @@ import java.io._
    * File formats:
    * merging progress data is written to a plain text file
    * graph data saving format(s) is specified in constructor
-   * options include plain text file, Parquet, JSon
+   * options include plain text file, Parquet, Json
    * partitioning data is saved in the same format as graph data
    *
    * Debugging data:
@@ -30,6 +28,11 @@ import java.io._
    *   (2) the log file object is for debugging
    ***************************************************************************/
 
+import org.apache.spark.sql._
+import org.graphframes._
+
+import java.io._
+
 sealed class LogFile(
   /***************************************************************************
    * path names, INCLUDING file names and extensions
@@ -38,7 +41,7 @@ sealed class LogFile(
   val pathLog:       String,   // plain text file path for merge progress data
   val pathParquet:   String,   // parquet file path for graph data
   val pathRDD:       String,   // RDD text file path for graph data
-  val pathJSon:      String,   // local JSON file path for graph data
+  val pathJson:      String,   // local Json file path for graph data
 
   /***************************************************************************
    * flags to specify whether associated graph data are saved
@@ -51,8 +54,9 @@ sealed class LogFile(
    *   (1) the operation is not for debugging, OR
    *   (2) the log file object is for debugging
    ***************************************************************************/
-  val debug:         Boolean,  // whether to print debug details
-) {
+  val debug:         Boolean   // whether to print debug details
+)
+{
 
   /***************************************************************************
    * log file construction, writing, and closing
@@ -65,9 +69,9 @@ sealed class LogFile(
   }
   else null
 
-  def write( msg: String, debugging: Bool )
+  def write( msg: String, debugging: Boolean )
     = if( !pathLog.isEmpty && ( !debugging || debug ) ) logFile.append(msg)
-  def close = f( !pathLog.isEmpty ) logFile.close
+  def close = if( !pathLog.isEmpty ) logFile.close
 
   /***************************************************************************
    * save graph into formats specified from object parameters
@@ -79,9 +83,9 @@ sealed class LogFile(
     // vertices: | idx , name , module |
     // edges: | from , to , exit prob. w/o tele |
     graphFile: GraphFrame,
-    debugging: Bool,
+    debugging: Boolean,
     debugExt: String // this string is appended to file name (for debugging)
-  ) = {
+  ): Unit = {
 
   /***************************************************************************
    * when debugging, an additional string is appended
@@ -111,7 +115,7 @@ sealed class LogFile(
       // routine to save all vertices, edges, partitioning and naming
       def saveDF(
         guard: Boolean, savePartition: Boolean, saveName: Boolean,
-        debugging: Boolean, filePath: String, debugExt: String,
+        debugging: Boolean, filePath: String, debugExt: String
       ): Unit = {
         // routine to save an individual dataframe
         def saveStruct( guard: Boolean, debugging: Boolean,
@@ -122,7 +126,7 @@ sealed class LogFile(
             val filename = if( !debugging )
               filePathInsert( filePath, fileExt )
             else
-              filePathInsert( filePath, debugExt+fileExt ),
+              filePathInsert( filePath, debugExt+fileExt )
             saveFn( filename, struct )
           }
         }
@@ -156,9 +160,13 @@ sealed class LogFile(
       }*/
 
   /***************************************************************************
-   * routine to save JSon
+   * routine to save Json
    ***************************************************************************/
+
+      if( !pathJson.isEmpty )
+        saveJson( graph ) /////////////// THIS NEEDS A LOT MORE WORK!!!
     }
+    {} // use this line to return unit for now
   }
 }
 
@@ -169,5 +177,5 @@ object LogFile
   def saveRDD( filename: String, struct: DataFrame ): Unit
   = struct.saveAsTextFile(filename)
 
-  def saveJSon( partition: Partition, id: String ) = ???
+  def saveJson( filename: String, graph: GraphFrame ) = ???
 }

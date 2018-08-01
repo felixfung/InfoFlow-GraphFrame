@@ -12,7 +12,7 @@ object ConfigFile {
     val pathJson:      String,   // local Json file path for graph data
     val savePartition: Boolean,  // whether to save partitioning data
     val saveName:      Boolean,  // whether to save node naming data
-    val debug:         Boolean,  // whether to print debug details
+    val debug:         Boolean   // whether to print debug details
   )
 }
 
@@ -29,7 +29,7 @@ sealed case class ConfigFile( filename: String )
     graphFile: String,
     algorithm: String,
     tele: Double,
-    logFile: LogParams
+    logFile: ConfigFile.LogParams
   ) = {
     val wholeFile: String = {
       val source = scala.io.Source.fromFile(filename)

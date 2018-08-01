@@ -44,7 +44,7 @@ object InfoFlowMain {
       config.logFile.pathJson,
       config.logFile.savePartition,
       config.logFile.saveName,
-      config.logFile.debug,
+      config.logFile.debug
     )
 
   /***************************************************************************
