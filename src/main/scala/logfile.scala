@@ -51,11 +51,11 @@ sealed class LogFile(
    *   (1) the operation is not for debugging, OR
    *   (2) the log file object is for debugging
    ***************************************************************************/
-  val debug:         String,   // whether to print debug details
+  val debug:         Boolean,  // whether to print debug details
 ) {
 
   /***************************************************************************
-   * Constructor: create directory and log file within
+   * log file construction, writing, and closing
    ***************************************************************************/
 
   // create file to store the loop of code lengths
@@ -65,25 +65,24 @@ sealed class LogFile(
   }
   else null
 
-  /***************************************************************************
-   * simple functions
-   ***************************************************************************/
   def write( msg: String, debugging: Bool )
-  = if( !pathLog.isEmpty && ( !debugging || debug ) ) logFile.append(msg)
+    = if( !pathLog.isEmpty && ( !debugging || debug ) ) logFile.append(msg)
   def close = f( !pathLog.isEmpty ) logFile.close
 
   /***************************************************************************
    * save graph into formats specified from object parameters
    ***************************************************************************/
   def save(
-    network: Network,
-    // original graph
+    // network: reduced graph, where each node is a community
+    network: GraphFrame,
+    // graphFile: original graph, all nodes and edges
     // vertices: | idx , name , module |
     // edges: | from , to , exit prob. w/o tele |
-    graphFile: DataFrame,
+    graphFile: GraphFrame,
     debugging: Bool,
     debugExt: String // this string is appended to file name (for debugging)
   ) = {
+
   /***************************************************************************
    * when debugging, an additional string is appended
    * after the file name and before the final dot
@@ -96,6 +95,7 @@ sealed class LogFile(
         case _ => filePath +insertion
       }
     }
+
   /***************************************************************************
    * a logging operation is only performed if:
    *   (1) the operation is not for debugging, OR
