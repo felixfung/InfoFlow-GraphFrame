@@ -1,11 +1,16 @@
 {
-  "Master": "local[*]",
-  "Pajek": "Nets/data/football.net",
-  "Algo": "InfoFlow",
-  "damping": "0.85",
-  "logDir": "Output",
-  "logWriteLog": "true",
-  "logRddText": "false",
-  "logRddJSon": "2",
-  "logSteps": "false"
+    "Master": "local[*]",
+    "Graph": "Nets/data/science2004/science2004.net",
+    "Algo": "InfoFlow",
+    "tele": "0.15",
+    "log": {
+        "log path": "Output/log.txt",
+        "Parquet path": "",
+        "RDD path": "",
+        "CSV path": "Output/text.csv",
+        "Json path": "Output/graph.json",
+        "save partition": "true",
+        "save name": "true",
+        "debug": "true"
+    }
 }
