@@ -39,5 +39,8 @@ class PajekFileTest extends FunSuite
 
   test("Read trivial network with comment") {
     val graph0 = PajekReader(sqlContext,"Nets/zero.net")
+    assert( graph0.vertices.collect.toList ===
+      List( Row(1,"v1",1) )
+    )
   }
 }
