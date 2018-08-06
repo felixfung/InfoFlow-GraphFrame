@@ -1,10 +1,26 @@
   /***************************************************************************
    * class to read in config file
+   * class that reads in a Json config file
+   * usage: val configFile = new ConfigFile("config.json")
+   *        val master = configFile.master
+   *        and so on to access other properties
    ***************************************************************************/
 
-// class that holds parameters for log file
-// used in ConfigFile class
-object ConfigFile {
+import scala.util.parsing.json._
+
+sealed case class ConfigFile
+(
+  master: String,
+  graphFile: String,
+  algorithm: String,
+  tele: Double,
+  logFile: ConfigFile.LogParams
+)
+
+object ConfigFile
+{
+  // class that holds parameters for log file
+  // used in ConfigFile class
   sealed case class LogParams(
     val pathLog:       String,   // plain text file path for merge progress data
     val pathParquet:   String,   // parquet file path for graph data
@@ -14,55 +30,22 @@ object ConfigFile {
     val saveName:      Boolean,  // whether to save node naming data
     val debug:         Boolean   // whether to print debug details
   )
-}
 
-import scala.util.parsing.json._
-
-// class that reads in a Json config file
-// usage: val configFile = new ConfigFile("config.json")
-//        val master = configFile.master
-//        and so on to access other properties
-sealed case class ConfigFile( filename: String )
-{
-  val (
-    master: String,
-    graphFile: String,
-    algorithm: String,
-    tele: Double,
-    logFile: ConfigFile.LogParams
-  ) = {
-    val wholeFile: String = {
-      val source = scala.io.Source.fromFile(filename)
-      try source.mkString
-      finally source.close
-    }
-
-    val parsedJson = JSON.parseFull(wholeFile).get
-
-    // function to retrieve value from parsed Json object
-    // usage: val jsonObject: Any
-    //        val jsonVal: Any = getVal( jsonObject, "key" )
-    def getVal( parsedJson: Any, key: String ) = {
-      parsedJson.asInstanceOf[Map[String,Any]] (key)
-    }
-
-    // intermediate nested Json object
-    val logParams = getVal( parsedJson, "log" )
-
-    // grab values
-    (
-      getVal( parsedJson, "Master" ).toString,
-      getVal( parsedJson, "Graph" ).toString,
-      getVal( parsedJson, "Algo" ).toString,
-      getVal( parsedJson, "tele" ).toString.toDouble,
+  def apply( filename: String ): ConfigFile = {
+    val rawJson = new JsonReader(filename)
+    ConfigFile(
+      rawJson.getVal("Master").toString,
+      rawJson.getVal("Graph").toString,
+      rawJson.getVal("Algo").toString,
+      rawJson.getVal("tele").toString.toDouble,
       ConfigFile.LogParams(
-        getVal( logParams, "log path" ).toString,
-        getVal( logParams, "Parquet path" ).toString,
-        getVal( logParams, "RDD path" ).toString,
-        getVal( logParams, "Json path" ).toString,
-        getVal( logParams, "save partition" ).toString.toBoolean,
-        getVal( logParams, "save name" ).toString.toBoolean,
-        getVal( logParams, "debug" ).toString.toBoolean
+        rawJson.getVal("log","log path").toString,
+        rawJson.getVal("log","Parquet path").toString,
+        rawJson.getVal("log","RDD path").toString,
+        rawJson.getVal("log","Json path").toString,
+        rawJson.getVal("log","save partition").toString.toBoolean,
+        rawJson.getVal("log","save name").toString.toBoolean,
+        rawJson.getVal("log","debug").toString.toBoolean
       )
     )
   }

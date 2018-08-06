@@ -28,7 +28,7 @@ object InfoFlowMain {
     val configFilename =
       if( args.size == 0 ) "config.json"
       else /*args.size==1*/ args(0)
-    val config = new ConfigFile(configFilename)
+    val config = ConfigFile(configFilename)
 
   /***************************************************************************
    * initialize parameters from config file
