@@ -1,8 +1,11 @@
 import scala.io.Source
 import java.io.FileNotFoundException
 
+import scala.collection.mutable.ListBuffer
+
 import org.apache.spark.sql._
 import org.graphframes._
+import org.apache.spark.sql.functions._
 
   /***************************************************************************
    * Pajek net file reader
@@ -16,8 +19,8 @@ extends GraphFile( sqlc, filename )
     // graph elements stored as local list
     // to be converted to DataFrame and stored in GrapheFrame
     // after file reading
-    var vertices: List[(Long,String,Long)] = Nil
-    var edges: List[(Long,Long,Double)] = Nil
+    var vertices = new ListBuffer[(Long,String,Long)]()
+    var edges = new ListBuffer[(Long,Long,Double)]()
 
     // regexes to match lines in file
     val starRegex = """\*([a-zA-Z]+).*""".r
@@ -91,9 +94,9 @@ extends GraphFile( sqlc, filename )
    ***************************************************************************/
       if( section == "vertices" ) {
         val newVertex = line match {
-          case vertexRegex( idx, name, idx ) =>
+          case vertexRegex( idx, name ) =>
             if( 1<=idx.toLong && idx.toLong<=nodeNumber )
-              ( idx.toLong, name, idx )
+              ( idx.toLong, name, idx.toLong )
             // check that index is in valid range
             else throw new Exception(
               "Vertex index must be within [1,"+nodeNumber.toString
@@ -104,7 +107,7 @@ extends GraphFile( sqlc, filename )
             "Vertex definition error: line " +lineNumber.toString
           )
         }
-        vertices.append( newVertex )
+        vertices += newVertex
       }
 
   /***************************************************************************
@@ -126,10 +129,10 @@ extends GraphFile( sqlc, filename )
             if( 1<=idx1.toLong && idx1.toLong<=nodeNumber
              && 1<=idx2.toLong && idx2.toLong<=nodeNumber ) {
               // check that weight is not negative
-              if( weight < 0 ) throw new Exception(
+              if( weight.toDouble < 0 ) throw new Exception(
                 "Edge weight must be non-negative: line "+lineNumber.toString
               )
-              ( idx1.toLong, idx2.toLong, weight )
+              ( idx1.toLong, idx2.toLong, weight.toDouble )
             }
             else throw new Exception(
               "Vertex index must be within [1,"+nodeNumber.toString
@@ -140,7 +143,7 @@ extends GraphFile( sqlc, filename )
             "Edge definition error: line " +lineNumber.toString
           )
         }
-        edges.append( newEdge )
+        edges += newEdge
       }
 
   /***************************************************************************
@@ -150,12 +153,12 @@ extends GraphFile( sqlc, filename )
         // obtain a list of vertices
         val vertices = line.split("\\s+").filter(x => !x.isEmpty)
         // obtain a list of edges
-        vertices.slice( 1, vertices.length )
+        val newEdges = vertices.slice( 1, vertices.length )
         .map {
-          case toVertex => ( (vertices(0).toLong, toVertex.toLong), 1.0 )
+          case toVertex => ( vertices(0).toLong, toVertex.toLong, 1.0 )
         }
         // append new list to existing list of edges
-        ::: edges
+        edges ++= newEdges
       }
 
       else {
@@ -163,7 +166,7 @@ extends GraphFile( sqlc, filename )
           +" line "+lineNumber.toString )
       }
 
-      lineNumber++
+      lineNumber += 1
     }
 
   /***************************************************************************
@@ -176,6 +179,14 @@ extends GraphFile( sqlc, filename )
    * generate vertices DataFrame, plus tidy up
    ***************************************************************************/
 
+    val spark: SparkSession =
+    SparkSession
+      .builder()
+      .appName("InfoFlow")
+      .config("spark.master", "local[*]")
+      .getOrCreate()
+    import spark.implicits._
+
     // obtain a DataFrame of vertices
     // which is perhaps missing "unspecified" vertices
     // see later blocks
@@ -183,21 +194,26 @@ extends GraphFile( sqlc, filename )
     .cache // since this DF will be used in later blocks, cache it
 
     // check that vertex indices are unique
-    verticesDF_missing.select('idx,'name,'module,1L as "count")
-    .groupBy('idx)
-    .sum('count)
-    .foreach {
-      case Row(idx,_,_,count: Long) => if(count>1) throw new Exception
-      ( "Vertex index is not unique: "+idx.toString )
+    {
+      val nonUniqueVertices = 
+      verticesDF_missing.select('idx,'name,'module,lit(1) as "count")
+      .groupBy("idx")
+      .sum("count")
+      .filter("count>1")
+
+      nonUniqueVertices.rdd.collect.foreach {
+        case Row(idx,_,_) => throw new Exception
+          ( "Vertex index is not unique: "+idx.toString )
+      }
     }
 
     // Pajek file format allows unspecified nodes
     // e.g. when the node number is 6 and only node 1,2,3 are specified,
     // nodes 4,5,6 are still assumed to exist with node name = node index
     val verticesDF = List.range(1,nodeNumber+1).toDF("idx")
-    .select('idx,'idx.toString as "default_name")
+    .select('idx,lit('idx.toString) as "default_name")
     .join( verticesDF_missing, 'idx, "left_outer" )
-    .select('idx, when('name.isNotNull,'name).otherwise('default_name),'module)
+    .select('idx, when(col("name").isNotNull,'name).otherwise('default_name),'module)
 
   /***************************************************************************
    * generate edges DataFrame, plus tidy up
@@ -206,7 +222,7 @@ extends GraphFile( sqlc, filename )
     // aggregate the weights for all same edges
     val edgesDF = edges.toDF("idx1","idx2","exitw")
     .groupBy('idx1,'idx2)
-    .sum('exitw)
+    .sum("exitw")
 
   /***************************************************************************
    * return GraphFrame
@@ -216,8 +232,6 @@ extends GraphFile( sqlc, filename )
   }
   catch {
       case e: FileNotFoundException =>
-        throw new Exception("Cannot open file "+filename)
-      case e: InvalidInputException =>
         throw new Exception("Cannot open file "+filename)
       case e: Exception =>
         throw e

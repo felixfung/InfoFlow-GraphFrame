@@ -105,7 +105,7 @@ sealed class LogFile(
    *   (1) the operation is not for debugging, OR
    *   (2) the log file object is for debugging
    ***************************************************************************/
-    if( !debugging || debug ) {
+    /*if( !debugging || debug ) {
 
   /***************************************************************************
    * saving to Parquet and RDD text routines are virtually identical
@@ -132,13 +132,17 @@ sealed class LogFile(
         }
 
         if( guard ) {
-          saveStruct( true, pathParquet, "-vertices",
+          saveStruct( true,
+            debugging, pathParquet, "-vertices", debugExt,
             LogFile.saveParquet, network.vertices )
-          saveStruct( true, pathParquet, "-edges",
+          saveStruct( true,
+            debugging, pathParquet, "-edges", debugExt,
             LogFile.saveParquet, network.edges )
-          saveStruct( savePartition, pathParquet, "-partition",
+          saveStruct( savePartition,
+            debugging, pathParquet, "-partition", debugExt,
             LogFile.saveParquet, partition )
-          saveStruct( saveName, pathParquet, "-name",
+          saveStruct( saveName,
+            debugging, pathParquet, "-name", debugExt,
             LogFile.saveParquet, network.name )
         }
       }
@@ -148,7 +152,7 @@ sealed class LogFile(
       saveDF( !pathRDD.isEmpty, savePartition, saveName,
         debugging, pathRDD, debugExt )
 
-      /*if( !pathRDD.isEmpty ) {
+      if( !pathRDD.isEmpty ) {
         saveStruct( true, pathRDD, "-vertices",
           LogFile.saveRDD, network.vertices )
         saveStruct( true, pathRDD, "-edges",
@@ -157,15 +161,16 @@ sealed class LogFile(
           LogFile.saveRDD, network.partition )
         saveStruct( saveName, pathRDD, "-name",
           LogFile.saveRDD, network.name )
-      }*/
+      }
 
   /***************************************************************************
    * routine to save Json
    ***************************************************************************/
 
-      if( !pathJson.isEmpty )
-        saveJson( graph ) /////////////// THIS NEEDS A LOT MORE WORK!!!
-    }
+      /*if( !pathJson.isEmpty ) {
+        LogFile.saveJson( pathJson, graph ) /////////////// THIS NEEDS A LOT MORE WORK!!!
+      }*/
+    }*/
     {} // use this line to return unit for now
   }
 }
@@ -175,7 +180,7 @@ object LogFile
   def saveParquet( filename: String, struct: DataFrame ): Unit
   = struct.write.parquet(filename) // check syntax
   def saveRDD( filename: String, struct: DataFrame ): Unit
-  = struct.saveAsTextFile(filename)
+  = struct.rdd.saveAsTextFile(filename)
 
-  def saveJson( filename: String, graph: GraphFrame ) = ???
+  def saveJson( filename: String, graph: GraphFrame ): Unit = ???
 }

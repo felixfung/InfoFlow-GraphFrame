@@ -12,9 +12,10 @@
 
 import org.apache.spark.sql._
 import org.graphframes._
+import org.apache.spark.sql.functions._
 
 abstract class CommunityDetection {
-  // real meet of community detection algorithm
+  // real meat of community detection algorithm
   // Network object holds all relevant community detection variables
   // returns also a GraphFrame of the original graph
   // these two data structures together holds community data and graph data
@@ -40,24 +41,18 @@ object CommunityDetection {
       throw new Exception( "Merge algorithm must be:"
         +"InfoMap or InfoFlow" )
 
-  /***************************************************************************
-   * math functions to calculate code length
-   * these are all pure functions
-   * so that given the same function arguments
-   * will always return the same result
-   ***************************************************************************/
-
+ 
   // calculate code length given modular properties
   // and the sum_node of plogp(prob) (can only be calculated with full graph)
   def calCodelength( modules: DataFrame, probSum: Double ): Double = {
     if( modules.groupBy().count.head.getLong(1) > 1 ) {
-      val plogp_sum_q: Double = plogp( modules.groupBy().sum("exitq")
-        .head ).getDouble(0)
-      val sum_plogp_q = -2*modules.select( plogp(modules.col("exitq")) )
+      val plogp_sum_q: Double = plogp_( modules.groupBy().sum("exitq")
+        .head.getDouble(0) )
+      val sum_plogp_q = -2* modules.select( plogp()(col("exitq")) )
         .groupBy().sum("exitq")
         .head.getDouble(0)
-      val sum_plogp_pq = modules.select( plogp('prob+'exitq) as "pq" )
-        .groupBy().sum('pq)
+      val sum_plogp_pq = modules.select( plogp()(col("prob")+col("exitq")) as "pq" )
+        .groupBy().sum("pq")
         .head.getDouble(0)
       plogp_sum_q +sum_plogp_q +probSum +sum_plogp_pq
     }
@@ -69,42 +64,67 @@ object CommunityDetection {
 
   // calculates the change in code length
   // when two modules are merged
-  def calDeltaL(
+  def calDeltaL_(
     nodeNumber: Long,
-    n1: Column, n2: Column, p1: Column, p2: Column,
-    tele: Double, qi_sum: Column, q1: Column, q2: Column,
-    w12: Column
-  ): Column = {
-    val q12 = calQ( tele, nodeNumber, n1+n2, p1+p2, w12 )
+    n1: Long, n2: Long, p1: Double, p2: Double,
+    tele: Double, qi_sum: Double, q1: Double, q2: Double,
+    w12: Double
+  ): Double = {
+    val q12 = calQ_( tele, nodeNumber, n1+n2, p1+p2, w12 )
     //calDeltaL_v(qi_sum,q1,q2,q12) +calDeltaL_nv(p1,p2,q1,q2,q12)
     (
-      plogp( qi_sum +q12-q1-q2 )
-      -plogp( qi_sum )
-      -2*plogp(q12) +2*plogp(q1) +2*plogp(q2)
-      +plogp(p1+p2+q12) -plogp(p1+q1) -plogp(p2+q2)
+      plogp_( qi_sum +q12-q1-q2 )
+      -plogp_( qi_sum )
+      -2.0*plogp_(q12) +2.0*plogp_(q1) +2.0*plogp_(q2)
+      +plogp_(p1+p2+q12) -plogp_(p1+q1) -plogp_(p2+q2)
     )
   }
 
   // calculates the probabilty of exiting a module (including teleportation)
-  def calQ(
+  def calQ_(
     tele: Double,
-    nodeNumber: Long, size: Column, prob: Column,
-    exitw: Column
-  ): Column = (
+    nodeNumber: Long, size: Double, prob: Double,
+    exitw: Double
+  ): Double = (
     tele *(nodeNumber-size) /(nodeNumber-1) *prob // teleportation
     +(1-tele) *exitw                              // random walk
   )
 
-  /***************************************************************************
-   * simple functions for codelength calculation
-   * duplicate each function, each with argument type Double and Column
-   * so that they can be applied to normal Double
-   * or within DataFrame.select()
-   ***************************************************************************/
-  def plogpd( double: Double ): Double = {
-    def log( double: Column ) = Math.log(double)/Math.log(2.0)
+  def plogp_( double: Double ): Double = {
+    def log( double: Double ) = Math.log(double)/Math.log(2.0)
     double *log( double )
   }
-  def plogp( double: Column ): Column =
-    plogpd( double.asInstanceOf[Double] )
+
+  /***************************************************************************
+   * here is the Column version of calculation functions
+   * which can be used within df.select()
+   ***************************************************************************/
+
+  def calDeltaL()(
+    nodeNumber: Column,
+    n1: Column, n2: Column, p1: Column, p2: Column,
+    tele: Column, qi_sum: Column, q1: Column, q2: Column,
+    w12: Column
+  ): Column = {
+    val q12 = calQ()( tele, nodeNumber, n1+n2, p1+p2, w12 )
+    (
+      plogp()( qi_sum +q12-q1-q2 )
+      -plogp()( qi_sum )
+      -lit(2.0)*( plogp()(q12) +plogp()(q1) +plogp()(q2) )
+      +plogp()(p1+p2+q12) -plogp()(p1+q1) -plogp()(p2+q2)
+    )
+  }
+ 
+  def calQ()(
+    tele: Column,
+    nodeNumber: Column, size: Column, prob: Column,
+    exitw: Column
+  ): Column = (
+    tele *(nodeNumber-size) /(nodeNumber-lit(1)) *prob // teleportation
+    +(lit(1)-tele) *exitw                              // random walk
+  )
+
+  def plogp()( double: Column ): Column = {
+    double *log( 2.0, double )
+  }
 }

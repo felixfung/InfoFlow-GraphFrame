@@ -28,7 +28,7 @@ object InfoFlowMain {
     val configFilename =
       if( args.size == 0 ) "config.json"
       else /*args.size==1*/ args(0)
-    val config = new Config(configFilename)
+    val config = new ConfigFile(configFilename)
 
   /***************************************************************************
    * initialize parameters from config file
@@ -58,13 +58,21 @@ object InfoFlowMain {
 
     val sqlContext = new org.apache.spark.sql.SQLContext(sc)
 
+    import org.apache.spark.sql.SparkSession
+    val spark = SparkSession
+      .builder()
+      //.appName("Spark SQL basic example")
+      //.config("spark.some.config.option", "some-value")
+      .getOrCreate()
+    import spark.implicits._
+
   /***************************************************************************
    * read, solve, save
    ***************************************************************************/
     val graph0 = GraphFile.openFile( sqlContext, graphFile ).graph
     val net0 = Network.init( graph0, tele )
     val (net1,graph1) = communityDetection( net0, graph0, logFile )
-    logFile.save( net1, graph1, false, "" )
+    logFile.save( net1.graph, graph1, false, "" )
 
   /***************************************************************************
    * Stop Spark Context
