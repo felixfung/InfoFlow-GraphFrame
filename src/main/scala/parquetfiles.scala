@@ -3,10 +3,9 @@ import org.graphframes._
 
 import scala.util.parsing.json._
 
-sealed class ParquetFiles ( sqlContext: SQLContext, filename: String )
-extends GraphFile( sqlContext, filename )
+object ParquetReader
 {
-  val graph: GraphFrame = {
+  def apply( sqlContext: SQLContext, filename: String ): GraphFrame = {
     val wholeFile: String = {
       val source = scala.io.Source.fromFile(filename)
       try source.mkString

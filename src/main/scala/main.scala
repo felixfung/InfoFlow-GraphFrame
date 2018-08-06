@@ -69,7 +69,7 @@ object InfoFlowMain {
   /***************************************************************************
    * read, solve, save
    ***************************************************************************/
-    val graph0 = GraphFile.openFile( sqlContext, graphFile ).graph
+    val graph0 = GraphReader( sqlContext, graphFile )
     val net0 = Network.init( graph0, tele )
     val (net1,graph1) = communityDetection( net0, graph0, logFile )
     logFile.save( net1.graph, graph1, false, "" )
