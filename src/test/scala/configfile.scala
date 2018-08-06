@@ -43,7 +43,7 @@ class ConfigFileTest extends FunSuite with BeforeAndAfter
     }
     finally {
       val file = new File(filename)
-      //file.delete
+      file.delete
     }
   }
 }
