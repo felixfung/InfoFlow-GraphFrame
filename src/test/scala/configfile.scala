@@ -3,7 +3,7 @@ import org.scalatest.BeforeAndAfter
 
 import java.io._
 
-class ConfigFileTest extends FunSuite with BeforeAndAfter
+class ConfigFileTest extends FunSuite
 {
   test("Parse simple config file") {
     val filename = "unittestconfig.json"
