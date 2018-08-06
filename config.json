@@ -7,7 +7,6 @@
         "log path": "Output/log.txt",
         "Parquet path": "",
         "RDD path": "",
-        "CSV path": "Output/text.csv",
         "Json path": "Output/graph.json",
         "save partition": "true",
         "save name": "true",
