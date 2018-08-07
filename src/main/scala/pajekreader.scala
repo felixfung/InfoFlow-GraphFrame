@@ -214,14 +214,14 @@ object PajekReader
       // e.g. when the node number is 6 and only node 1,2,3 are specified,
       // nodes 4,5,6 are still assumed to exist with node name = node index
       val verticesDF = List.range(1,nodeNumber+1).toDF("id")
-      .select('id, lit('id.toString) as "default_name")
+      .select('id, 'id as "default_name")
       .alias("default")
       .join( verticesDF_missing.alias("specific"),
         col("specific.id") === col("default.id"), "left_outer" )
       .select(
         col("default.id"),
-        when('name.isNotNull,'name).otherwise('default_name),
-        'module
+        when('name.isNotNull,'name).otherwise('default_name) as "name",
+        col("default.id") as "module"
       )
 
   /***************************************************************************
