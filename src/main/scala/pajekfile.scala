@@ -80,6 +80,7 @@ object PajekReader
                       +" line "+lineNumber.toString )
                   }
                 }
+                section = "section_def"
                 newSection
               }
             }
@@ -161,13 +162,7 @@ object PajekReader
           edges ++= newEdges
         }
 
-        else if(
-             newSection.toLowerCase!="vertices"
-          && newSection.toLowerCase!="edges"
-          && newSection.toLowerCase!="arcs"
-          && newSection.toLowerCase!="edgeslist"
-          && newSection.toLowerCase!="arcslist"
-        )
+        else if( section != "section_def" )
         {
           throw new Exception("Line does not belong to any sections:"
             +" line "+lineNumber.toString )

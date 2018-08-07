@@ -9,7 +9,7 @@ import org.apache.spark.SparkContext
 import org.apache.spark.SparkContext._
 import org.apache.spark.SparkConf
 
-import org.scalactic.TolerantNumerics
+//import org.scalactic.TolerantNumerics
 
 class PajekFileTest extends FunSuite
 {
@@ -41,6 +41,17 @@ class PajekFileTest extends FunSuite
     val graph0 = PajekReader(sqlContext,"Nets/zero.net")
     assert( graph0.vertices.collect.toList ===
       List( Row(1,"v1",1) )
+    )
+    assert( graph0.edges.collect.toList === List() )
+  }
+
+  test("Read trivial network") {
+    val graph0 = PajekReader(sqlContext,"Nets/trivial.net")
+    assert( graph0.vertices.collect.toList ===
+      List( Row(1,"m01",1), Row(2,"m02",2) )
+    )
+    assert( graph0.edges.collect.toList ===
+      List( Row(1,2,2) )
     )
   }
 }
