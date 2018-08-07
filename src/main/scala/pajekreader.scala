@@ -179,7 +179,7 @@ object PajekReader
         throw new Exception( "There must be one and only one vertices section" )
 
   /***************************************************************************
-   * generate vertices DataFrame, plus tidy up
+   * import spark.implicits._ to use toDF()
    ***************************************************************************/
 
       val spark: SparkSession =
@@ -189,6 +189,10 @@ object PajekReader
         .config("spark.master", "local[*]")
         .getOrCreate()
       import spark.implicits._
+
+  /***************************************************************************
+   * generate vertices DataFrame
+   ***************************************************************************/
 
       // obtain a DataFrame of vertices
       // which is perhaps missing "unspecified" vertices
@@ -225,7 +229,7 @@ object PajekReader
       )
 
   /***************************************************************************
-   * generate edges DataFrame, plus tidy up
+   * generate edges DataFrame
    ***************************************************************************/
 
       // aggregate the weights for all same edges
