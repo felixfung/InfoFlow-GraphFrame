@@ -91,7 +91,6 @@ class PajekReaderTest extends FunSuite with BeforeAndAfter
       Set( Row(1,"1",1), Row(2,"2",2), Row(3,"3",3),
            Row(4,"4",4), Row(5,"5",5), Row(6,"6",6) )
     )
-    graph0.edges.show
     assert( graph0.edges.collect.toSet === Set(
       Row(1,2,1), Row(1,3,1), Row(1,4,1),
       Row(2,1,1), Row(2,2,1), Row(2,6,1),
