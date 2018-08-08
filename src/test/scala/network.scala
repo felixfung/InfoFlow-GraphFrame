@@ -24,23 +24,6 @@ class NetworkTest extends FunSuite with BeforeAndAfter
   import spark.implicits._
   val sqlContext = new org.apache.spark.sql.SQLContext(sc)
 
-/*
-  val spark = SparkSession.builder.getOrCreate
-  import spark.implicits._
-  var sc: SparkContext = _
-  var sqlContext: SQLContext = _
-  before {
-    import org.apache.spark.SparkConf
-    val conf = new SparkConf()
-      .setAppName("InfoFlow")
-      .setMaster( "local[*]" )
-
-    sc = new SparkContext(conf)
-    sc.setLogLevel("OFF")
-
-    val sqlContext = new org.apache.spark.sql.SQLContext(sc)
-  }
-*/
   /***************************************************************************
    * Test Cases
    ***************************************************************************/
