@@ -7,24 +7,40 @@ import org.apache.spark.sql.functions._
 
 import org.apache.spark.SparkContext
 import org.apache.spark.SparkContext._
-import org.apache.spark.SparkConf
 
-class NetworkTest extends FunSuite
+class NetworkTest extends FunSuite with BeforeAndAfter
 {
   /***************************************************************************
    * Initialize Spark Context
    ***************************************************************************/
-  import org.apache.spark.sql.SparkSession
+
+  var sc: SparkContext = _
   val spark = SparkSession
     .builder()
     .appName("InfoFlow Pajek file tests")
     .config("spark.master","local[*]")
     .getOrCreate
-
-  var sc: SparkContext = _
-  val sqlContext = new org.apache.spark.sql.SQLContext(sc)
+  spark.sparkContext.setLogLevel("OFF")
   import spark.implicits._
+  val sqlContext = new org.apache.spark.sql.SQLContext(sc)
 
+/*
+  val spark = SparkSession.builder.getOrCreate
+  import spark.implicits._
+  var sc: SparkContext = _
+  var sqlContext: SQLContext = _
+  before {
+    import org.apache.spark.SparkConf
+    val conf = new SparkConf()
+      .setAppName("InfoFlow")
+      .setMaster( "local[*]" )
+
+    sc = new SparkContext(conf)
+    sc.setLogLevel("OFF")
+
+    val sqlContext = new org.apache.spark.sql.SQLContext(sc)
+  }
+*/
   /***************************************************************************
    * Test Cases
    ***************************************************************************/
@@ -40,5 +56,12 @@ class NetworkTest extends FunSuite
     //assert( network.probSum === ??? )
     //assert( network.codelength === ??? )
     //assert( network.graph.vertices.select('id,'prob).collect.toSet === ??? )
+  }
+
+  /***************************************************************************
+   * Terminate Spark Context
+   ***************************************************************************/
+  after {
+    if( sc != null ) sc.stop
   }
 }
