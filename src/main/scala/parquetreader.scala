@@ -1,27 +1,14 @@
 import org.apache.spark.sql._
 import org.graphframes._
 
-import scala.util.parsing.json._
-
 object ParquetReader
 {
   def apply( sqlContext: SQLContext, filename: String ): GraphFrame = {
-    val wholeFile: String = {
-      val source = scala.io.Source.fromFile(filename)
-      try source.mkString
-      finally source.close
-    }
-    val parsedJson = JSON.parseFull(wholeFile).get
+    val jsonReader = new JsonReader(filename)
 
-    // function to retrieve value from parsed Json object
-    // usage: val jsonObject: Any
-    //        val jsonVal: Any = getVal( jsonObject, "key" )
-    def getVal( parsedJson: Any, key: String ) = {
-      parsedJson.asInstanceOf[Map[String,Any]] (key)
-    }
+    val verticesFile = jsonReader.getVal("Vertex File").toString
+    val edgesFile = jsonReader.getVal("Edge File").toString
 
-    val verticesFile = getVal( parsedJson, "Vertex File" ).toString
-    val edgesFile = getVal( parsedJson, "Edge File" ).toString
     val vertices = sqlContext.read.format("parquet").load(verticesFile)
     val edges = sqlContext.read.format("parquet").load(edgesFile)
 
