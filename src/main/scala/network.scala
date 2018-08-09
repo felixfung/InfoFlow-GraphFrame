@@ -18,7 +18,7 @@ sealed case class Network
   nodeNumber: Long, // number of vertices/nodes in network
   // graph: GraphFrame:
   // vertices: modular properties
-  // vertices: | id , prob , exitw , exitq |
+  // vertices: | id , size , prob , exitw , exitq |
   // (module index) (ergidc frequency) (exit prob w/o tele) (exit prob w/ tele)
   // edges: transition probability w/o tele
   // deges: | src , dst , exitw |
