@@ -9,25 +9,8 @@ import org.apache.spark.SparkContext
 import org.apache.spark.SparkContext._
 import org.apache.spark.SparkConf
 
-class PajekReaderTest extends FunSuite with BeforeAndAfter
+class PajekReaderTest extends SparkSQLTestSuite
 {
-  /***************************************************************************
-   * Initialize Spark Context
-   ***************************************************************************/
-
-  var sc: SparkContext = _
-  val spark = SparkSession
-    .builder()
-    .appName("InfoFlow Pajek file tests")
-    .config("spark.master","local[*]")
-    .getOrCreate
-  spark.sparkContext.setLogLevel("OFF")
-  import spark.implicits._
-  val sqlContext = new org.apache.spark.sql.SQLContext(sc)
-
-  /***************************************************************************
-   * Test Cases
-   ***************************************************************************/
 
   test("Throw error when reading wrong file") {
     val thrown = intercept[Exception] {
@@ -96,12 +79,5 @@ class PajekReaderTest extends FunSuite with BeforeAndAfter
       Row(2,1,1), Row(2,2,1), Row(2,6,1),
       Row(3,2,1), Row(3,4,1)
     ) )
-  }
-
-  /***************************************************************************
-   * Terminate Spark Context
-   ***************************************************************************/
-  after {
-    if( sc != null ) sc.stop
   }
 }

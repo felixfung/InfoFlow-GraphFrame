@@ -8,7 +8,7 @@ import org.graphframes._
 import org.apache.spark.SparkContext
 import org.apache.spark.SparkContext._
 
-class NetworkTest extends FunSuite with BeforeAndAfter
+class NetworkTest extends SparkSQLTestSuite
 {
 
   /***************************************************************************
@@ -58,24 +58,12 @@ class NetworkTest extends FunSuite with BeforeAndAfter
     tolerance: Double ): Boolean = {
     equalWithTolerance( edge1, edge2, tolerance, 2 )
   }
-  /***************************************************************************
-   * Initialize Spark Context
-   ***************************************************************************/
-
-  var sc: SparkContext = _
-  val spark = SparkSession
-    .builder()
-    .appName("InfoFlow network intiation tests")
-    .config("spark.master","local[*]")
-    .getOrCreate
-  spark.sparkContext.setLogLevel("OFF")
-  import spark.implicits._
-  val sqlContext = new org.apache.spark.sql.SQLContext(sc)
 
   /***************************************************************************
    * Test Cases
    ***************************************************************************/
 
+  import spark.implicits._
   test("Check calculations for trivial network") {
     val vertices = List( (1,"1",1), (2,"2",2) ).toDF("id","name","module")
     val edges = List( (1,2,1), (2,1,1) ).toDF("src","dst","exitw")
@@ -100,12 +88,5 @@ class NetworkTest extends FunSuite with BeforeAndAfter
   }
 
   ignore("Check calculations for trivial network with self loop (PageRank?)") {
-  }
-
-  /***************************************************************************
-   * Terminate Spark Context
-   ***************************************************************************/
-  after {
-    if( sc != null ) sc.stop
   }
 }
