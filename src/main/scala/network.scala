@@ -132,7 +132,7 @@ object Network
   // which should be performed within community detection algorithm iterations
   // to avoid stack overflow problem
   def trim( df: DataFrame ): Unit = {
-    df.rdd.checkpoint
+    df.rdd.localCheckpoint
     df.rdd.count
     //df.rdd.toDF
   }
