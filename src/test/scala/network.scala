@@ -64,7 +64,7 @@ class NetworkTest extends SparkSQLTestSuite
    ***************************************************************************/
 
   import spark.implicits._
-  test("Check calculations for trivial network") {
+  ignore("Check calculations for trivial network") {
     val vertices = List( (1,"1",1), (2,"2",2) ).toDF("id","name","module")
     val edges = List( (1,2,1), (2,1,1) ).toDF("src","dst","exitw")
     val graph0 = GraphFrame( vertices, edges )
@@ -72,21 +72,73 @@ class NetworkTest extends SparkSQLTestSuite
     assert( network.tele === 0.15 )
     assert( network.nodeNumber ===
       network.graph.vertices.groupBy().count.head.getLong(0) )
-    assert(edgesEq(
-      network.graph.edges.orderBy("src","dst").collect.toList,
-      List( Row(1,2,0.5), Row(2,1,0.5) ),
-      0.1
-    ))
     assert(modulesEq(
       network.graph.vertices.orderBy("id").collect.toList,
       List( Row(1,1,0.5,0.5,0.5), Row(2,1,0.5,0.5,0.5) ),
       0.1
     ))
-    //assert( network.probSum === ??? )
+    assert(edgesEq(
+      network.graph.edges.orderBy("src","dst").collect.toList,
+      List( Row(1,2,0.5), Row(2,1,0.5) ),
+      0.1
+    ))
     //assert( network.codelength === ??? )
-    //assert( network.graph.vertices.select('id,'prob).collect.toSet === ??? )
   }
 
-  ignore("Check calculations for trivial network with self loop (PageRank?)") {
+  ignore("Trivial network with self loop should not change result") {
+    val vertices = List( (1,"1",1), (2,"2",2) ).toDF("id","name","module")
+    val edges = List( (1,2,1), (2,1,1), (1,1,1) ).toDF("src","dst","exitw")
+    val graph0 = GraphFrame( vertices, edges )
+    val network = Network.init( graph0, 0.15 )
+    assert(modulesEq(
+      network.graph.vertices.orderBy("id").collect.toList,
+      List( Row(1,1,0.5,0.5,0.5), Row(2,1,0.5,0.5,0.5) ),
+      0.1
+    ))
+    assert(edgesEq(
+      network.graph.edges.orderBy("src","dst").collect.toList,
+      List( Row(1,2,0.5), Row(2,1,0.5) ),
+      0.1
+    ))
+  }
+
+  ignore("PageRank calculation on non-trivial graph") {
+    val vertices = List(
+      (1,"1",1), (2,"2",2), (3,"3",3), (4,"4",4)
+    ).toDF("id","name","module")
+    val edges = List(
+      (1,2,1), (2,3,1), (1,3,1), (3,1,1), (4,3,1)
+    ).toDF("src","dst","exitw")
+    val graph0 = GraphFrame( vertices, edges )
+    val network = Network.init( graph0, 0.15 )
+    assert(modulesEq(
+      network.graph.vertices.orderBy("id").collect.toList,
+      List(
+        Row( 1, 1, 0.3725, 0.3725, 0.3725 ),
+        Row( 2, 1, 0.195, 0.195, 0.195 ),
+        Row( 3, 1, 0.395, 0.395, 0.395 ),
+        Row( 4, 1, 0.0375, 0.0375, 0.0375 )
+      ),
+      0.1
+    ))
+    assert(edgesEq(
+      network.graph.edges.orderBy("src","dst").collect.toList,
+      List(
+        Row( 1, 2, 0.5 *0.3725 ),
+        Row( 2, 3, 1 *0.195 ),
+        Row( 1, 3, 0.5 *0.3725 ),
+        Row( 3, 1, 1 *0.395 ),
+        Row( 4, 3, 1 *0.0375 )
+      ),
+      0.1
+    ))
+  }
+
+  test("Calculations with a lonely module") {
+    val vertices = List( (1,"1",1), (2,"2",2), (3,"3",3) )
+    .toDF("id","name","module")
+    val edges = List( (1,2,1), (2,1,1) ).toDF("src","dst","exitw")
+    val graph0 = GraphFrame( vertices, edges )
+    val network = Network.init( graph0, 0.15 )
   }
 }

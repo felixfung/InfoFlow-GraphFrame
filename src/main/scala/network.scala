@@ -21,7 +21,7 @@ sealed case class Network
   // vertices: | id , size , prob , exitw , exitq |
   // (module index) (ergidc frequency) (exit prob w/o tele) (exit prob w/ tele)
   // edges: transition probability w/o tele
-  // deges: | src , dst , exitw |
+  // edges: | src , dst , exitw |
   graph: GraphFrame,
   // sum_node plogp(prob), for codelength calculation
   // it can only be calculated with the full graph and not the reduced one
@@ -64,25 +64,31 @@ object Network
     // since transition probability is normalized per 'src node,
     // w and q are mathematically identical to p
     // as long as there is at least one connection
-    val modules = prob.join( graph1.edges,
+    // | id , size , prob , exitw , exitq |
+    val modules = prob.join( graph1.edges.select(col("src")).distinct,
       col("id") === col("src"), "left_outer"
     )
     .select(
       col("id"),
       lit(1) as "size",
       col("prob"),
-      when(col("src").isNotNull,col("prob"))
+      when( col("src").isNotNull, col("prob") )
         .otherwise(lit(0)) as "exitw",
-      when(col("src").isNotNull,col("prob"))
-        .otherwise(lit(tele)*col("prob")) as "exitq"
+      when( col("src").isNotNull, col("prob") )
+        .otherwise( lit(tele) *col("prob") ) as "exitq"
     )
 
     // probability of transitioning within two modules w/o teleporting
+    // | src , dst , exitw |
     val edges = prob.join(
       graph1.edges.filter( "src != dst" ), // filter away self connections
       col("id") === col("src")
     )
-    .select(col("src"),col("dst"),col("prob")*col("exitw"))
+    .select(
+      col("src"),
+      col("dst"),
+      col("prob")*col("exitw") as "exitw"
+    )
 
     // calculate current code length
     val probSum = modules.select(
