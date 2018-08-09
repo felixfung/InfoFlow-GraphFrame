@@ -14,6 +14,8 @@ import org.apache.spark.sql._
 import org.graphframes._
 import org.apache.spark.sql.functions._
 
+import org.apache.spark.sql.functions.log2
+
 abstract class CommunityDetection {
   // real meat of community detection algorithm
   // Network object holds all relevant community detection variables
@@ -41,18 +43,17 @@ object CommunityDetection {
       throw new Exception( "Merge algorithm must be:"
         +"InfoMap or InfoFlow" )
 
- 
   // calculate code length given modular properties
   // and the sum_node of plogp(prob) (can only be calculated with full graph)
   def calCodelength( modules: DataFrame, probSum: Double ): Double = {
-    if( modules.groupBy().count.head.getLong(1) > 1 ) {
+    if( modules.groupBy().count.head.getLong(0) > 1 ) {
       val plogp_sum_q: Double = plogp_( modules.groupBy().sum("exitq")
         .head.getDouble(0) )
-      val sum_plogp_q = -2* modules.select( plogp()(col("exitq")) )
-        .groupBy().sum("exitq")
+      val sum_plogp_q = -2* modules.select( plogp()(col("exitq")) as "plogp_q")
+        .groupBy().sum("plogp_q")
         .head.getDouble(0)
-      val sum_plogp_pq = modules.select( plogp()(col("prob")+col("exitq")) as "pq" )
-        .groupBy().sum("pq")
+      val sum_plogp_pq = modules.select( plogp()(col("prob")+col("exitq")) as "plogp_pq" )
+        .groupBy().sum("plogp_pq")
         .head.getDouble(0)
       plogp_sum_q +sum_plogp_q +probSum +sum_plogp_pq
     }
@@ -125,6 +126,6 @@ object CommunityDetection {
   )
 
   def plogp()( double: Column ): Column = {
-    double *log( 2.0, double )
+    double *log2( double )
   }
 }

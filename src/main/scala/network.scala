@@ -9,8 +9,8 @@
    ***************************************************************************/
 
 import org.apache.spark.sql._
-import org.graphframes._
 import org.apache.spark.sql.functions._
+import org.graphframes._
 
 sealed case class Network
 (
@@ -18,10 +18,10 @@ sealed case class Network
   nodeNumber: Long, // number of vertices/nodes in network
   // graph: GraphFrame:
   // vertices: modular properties
-  // vertices: | idx , prob , exitw , exitq |
+  // vertices: | id , prob , exitw , exitq |
   // (module index) (ergidc frequency) (exit prob w/o tele) (exit prob w/ tele)
   // edges: transition probability w/o tele
-  // deges: | idx1 , idx2 , exitw |
+  // deges: | src , dst , exitw |
   graph: GraphFrame,
   // sum_node plogp(prob), for codelength calculation
   // it can only be calculated with the full graph and not the reduced one
@@ -40,42 +40,46 @@ object Network
    * these are put and returned to a Network object
    * which can be used for community detection
    ***************************************************************************/
-  def init( graph: GraphFrame, tele: Double ): Network = {
-    // graph.vertices: ( idx: Long, name: String, module: Long )
-    // graph.edges: ( idx1: Long, idx2: Long, exitw: Double )
+  def init( graph0: GraphFrame, tele: Double ): Network = {
+    // graph.vertices: ( id: Long, name: String, module: Long )
+    // graph.edges: ( src: Long, dst: Long, exitw: Double )
 
-    val nodeNumber: Long = graph.vertices.groupBy().count.head.getLong(0)
+    val graph1 = normalizeEdges( trimSelfEdge(graph0) )
+
+    val nodeNumber: Long = graph1.vertices.groupBy().count.head.getLong(0)
 
     // get PageRank ergodic frequency for each node
-    val prob = graph.pageRank.resetProbability(1-tele).tol(0.01).run
+    val prob = graph1.pageRank.resetProbability(tele).tol(0.01).run
 
     // modular information
-    // since transition probability is normalized per 'idx1 node,
+    // since transition probability is normalized per 'src node,
     // w and q are mathematically identical to p
     // as long as there is at least one connection
-    val modules = prob.vertices.join( graph.edges,
-      col("idx") === col("idx1"), "left_outer"
+    val modules = prob.vertices.join( graph1.edges,
+      col("id") === col("src"), "left_outer"
     )
-    .select( col("idx"), lit(1) as "size", col("pagerank") as "prob",
-      when(col("idx1").isNotNull,col("pagerank")).otherwise(0) as "exitw",
-      when(col("idx1").isNotNull,col("pagerank")).otherwise(col("tele")*col("pagerank")) as "exitq"
+    .select(
+      col("id"), lit(1) as "size",
+      col("pagerank") as "prob",
+      when(col("src").isNotNull,col("pagerank")).otherwise(lit(0)) as "exitw",
+      when(col("src").isNotNull,col("pagerank")).otherwise(lit(tele)*col("pagerank")) as "exitq"
     )
 
     // probability of transitioning within two modules w/o teleporting
-    // the merging operation is symmetric towards the two modules
-    // identify the merge operation by
-    // (smaller module index,bigger module index)
     val edges = prob.vertices.join(
-      graph.edges.filter( "idx1 != idx2" ), // filter away self connections
-      "idx === idx1"
+      graph1.edges.filter( "src != dst" ), // filter away self connections
+      col("id") === col("src")
     )
-    .select(col("idx1"),col("idx2"),col("pagerank")*col("exitw"))
+    .select(col("src"),col("dst"),col("pagerank")*col("exitw"))
 
     // calculate current code length
-    val probSum: Double = modules.select( CommunityDetection.plogp()(col("prob") ))
-    .groupBy().sum("prob")
+    val probSum = modules.select(
+      CommunityDetection.plogp()( col("prob") ) as "plogp_p"
+    )
+    .groupBy().sum("plogp_p")
     .head.getDouble(0)
-    val codelength: Double = CommunityDetection.calCodelength( modules, probSum )
+
+    val codelength = CommunityDetection.calCodelength( modules, probSum )
 
     Network(
       tele, nodeNumber,
@@ -85,14 +89,31 @@ object Network
     )
   }
 
+  // remove edges where the src and dst vertices are identical
+  def trimSelfEdge( graph: GraphFrame ): GraphFrame = {
+    GraphFrame( graph.vertices,
+      graph.edges.filter("src != dst")
+    )
+  }
+
+  // normalize the edge weights of the graph
+  // with respect to the src vertex
+  def normalizeEdges( graph: GraphFrame ): GraphFrame = {
+    GraphFrame( graph.vertices,
+      graph.edges
+      .groupBy("src").sum("exitw")
+      .join( graph.edges, "src" )
+      .select(
+        col("src"), col("dst"),
+        col("exitw")/col("sum(exitw)") as "exitw"
+      )
+    )
+  }
+
   // function to trim RDD/DF lineage
   // which should be performed within community detection algorithm iterations
   // to avoid stack overflow problem
   def trim( df: DataFrame ): Unit = {
-    /*import org.apache.spark.sql.SparkSession
-    val spark = SparkSession .builder() .getOrCreate()
-    import spark.implicits._*/
-
     df.rdd.checkpoint
     df.rdd.count
     //df.rdd.toDF
