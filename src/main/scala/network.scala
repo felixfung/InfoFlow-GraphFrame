@@ -49,28 +49,40 @@ object Network
     val nodeNumber: Long = graph1.vertices.groupBy().count.head.getLong(0)
 
     // get PageRank ergodic frequency for each node
-    val prob = graph1.pageRank.resetProbability(tele).tol(0.01).run
+    val probUnnormalized = graph1.pageRank.resetProbability(tele).tol(0.01).run
+    // normalize page rank
+    val probNorm = probUnnormalized.vertices.select(
+      col("id"), col("pagerank")
+    )
+    .groupBy().sum("pagerank")
+    .head.getDouble(0)
+    val prob = probUnnormalized.vertices.select(
+      col("id"), col("pagerank")/lit(probNorm) as "prob"
+    )
 
     // modular information
     // since transition probability is normalized per 'src node,
     // w and q are mathematically identical to p
     // as long as there is at least one connection
-    val modules = prob.vertices.join( graph1.edges,
+    val modules = prob.join( graph1.edges,
       col("id") === col("src"), "left_outer"
     )
     .select(
-      col("id"), lit(1) as "size",
-      col("pagerank") as "prob",
-      when(col("src").isNotNull,col("pagerank")).otherwise(lit(0)) as "exitw",
-      when(col("src").isNotNull,col("pagerank")).otherwise(lit(tele)*col("pagerank")) as "exitq"
+      col("id"),
+      lit(1) as "size",
+      col("prob"),
+      when(col("src").isNotNull,col("prob"))
+        .otherwise(lit(0)) as "exitw",
+      when(col("src").isNotNull,col("prob"))
+        .otherwise(lit(tele)*col("prob")) as "exitq"
     )
 
     // probability of transitioning within two modules w/o teleporting
-    val edges = prob.vertices.join(
+    val edges = prob.join(
       graph1.edges.filter( "src != dst" ), // filter away self connections
       col("id") === col("src")
     )
-    .select(col("src"),col("dst"),col("pagerank")*col("exitw"))
+    .select(col("src"),col("dst"),col("prob")*col("exitw"))
 
     // calculate current code length
     val probSum = modules.select(
