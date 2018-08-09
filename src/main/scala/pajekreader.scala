@@ -236,6 +236,7 @@ object PajekReader
       val edgesDF = edges.toDF("src","dst","exitw")
       .groupBy('src,'dst)
       .sum("exitw")
+      .select( col("src"), col("dst"), col("sum(exitw)") as "exitw" )
 
   /***************************************************************************
    * return GraphFrame
