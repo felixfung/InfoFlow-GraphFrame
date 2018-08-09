@@ -18,10 +18,9 @@ object GraphReader
   // simple factory to return the appropriate GraphFile reader
   // based on file extension
   def apply( sqlContext: SQLContext, filename: String ): GraphFrame = {
-    val extension = filename.split(".").lastOption
-    extension match {
-      case None => throw new Exception("Graph file has no file extension")
-      case Some(ext) => {
+    val regex = """(.*)\.(\w+)""".r
+    filename match {
+      case regex(_,ext) => {
         if( ext.toLowerCase == "net" )
           PajekReader( sqlContext, filename )
         else if( ext.toLowerCase == "parquet" )
@@ -31,6 +30,7 @@ object GraphReader
             "File must be Pajek net file (.net) or Parquet file (.parquet)"
           )
       }
+      case _ => throw new Exception("Graph file has no file extension")
     }
   }
 }
