@@ -12,7 +12,7 @@ class InfoFlowTest extends SparkSQLTestSuite
 {
   test("InfoFlow on trivial network") {
     val (success,net1) = CommunityDetectionTest( sqlContext,
-      "Nets/trivial.net", new InfoFlow(),
+      "Nets/trivial.net", new InfoFlow,
       Set( Row(1,1), Row(2,2) ),
       1.45
     )

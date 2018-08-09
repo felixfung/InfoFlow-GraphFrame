@@ -56,7 +56,7 @@ sealed class InfoFlow extends CommunityDetection
       }
 
       // calculate the deltaL table for all possible merges
-      // | idx1 , idx2 , dL |
+      // | src , dst , dL |
       val deltaL = calDeltaL(network)
 
       // module to merge
@@ -70,11 +70,11 @@ sealed class InfoFlow extends CommunityDetection
 
       // map each network.vertices to a new module
       // according to connected components of m2Merge
-      // | idx , module |
+      // | id , module |
       val moduleMap = calModuleMap( network, m2Merge )
 
       // new nodal-modular partitioning scheme
-      // | idx , module |
+      // | id , module |
       // difference from moduleMap:
       // (1) moduleMap verticesare modules
       //     newPartition nodes are all original nodes
@@ -90,7 +90,7 @@ sealed class InfoFlow extends CommunityDetection
       // and will be subtracted from the w_i's
       // if the new indices are different, they are intermodular connections
       // and will be aggregated into w_ij's
-      // | idx1 , idx2 , iWj |
+      // | src , dst , iWj |
       val interEdges = calInterEdges( network, moduleMap )
       // cache result, which is to calculate both newModules and newEdges
       .cache
@@ -112,7 +112,7 @@ sealed class InfoFlow extends CommunityDetection
       )
 
       // calculate new network
-      val newEdges = interEdges.filter( "idx1 != idx2" )
+      val newEdges = interEdges.filter( "src != dst" )
       val newNetwork = calNewNetwork(
         network,
         newNodeNumber, newCodelength,
@@ -141,21 +141,21 @@ sealed class InfoFlow extends CommunityDetection
 
   /***************************************************************************
    * table of all possible merges, and code length change
-   * | idx1 , idx2 , dL |
+   * | src , dst , dL |
    ***************************************************************************/
     def calDeltaL( network: Network ): DataFrame = {
       val qi_sum = network.graph.vertices.groupBy().sum("exitq").head.getDouble(0)
       network.graph.edges.alias("e1")
-      // get all modular properties from "idx1" and "idx2"
-      .join( network.graph.vertices.alias("m1"), col("idx1") === col("m1.idx") )
-      .join( network.graph.vertices.alias("m2"), col("idx2") === col("m2.idx") )
+      // get all modular properties from "src" and "dst"
+      .join( network.graph.vertices.alias("m1"), col("src") === col("m1.id") )
+      .join( network.graph.vertices.alias("m2"), col("dst") === col("m2.id") )
       // find the opposite edge, needed for exitw calculation
       .join( network.graph.vertices.alias("e2"),
-        col("e1.idx1")===col("e2.idx2") && col("e1.idx2")===col("e2.idx1"),
+        col("e1.src")===col("e2.dst") && col("e1.dst")===col("e2.src"),
         "left_outer" )
       // create table of change in code length of all possible merges
       .select(
-        col("idx1"), col("idx2"),
+        col("src"), col("dst"),
         CommunityDetection.calDeltaL()(
           lit(network.nodeNumber), col("m1.size"), col("m2.size"), col("m1.prob"), col("m2.prob"),
           lit(network.tele), lit(qi_sum), col("m1.exitq"), col("m2.exitq"),
@@ -170,8 +170,8 @@ sealed class InfoFlow extends CommunityDetection
         ) as "dL"
       )
     }
-    // importantly, dL is symmetric towards idx1 and idx2
-    // so if both edges (idx1,idx2) and (idx2,idx1) exists
+    // importantly, dL is symmetric towards src and dst
+    // so if both edges (src,dst) and (dst,src) exists
     // their dL would be identical
     // since dL (and the whole purpose of this table)
     // is used to decide on merge, there is an option
@@ -207,26 +207,26 @@ sealed class InfoFlow extends CommunityDetection
    ***************************************************************************/
     def calm2Merge( deltaL: DataFrame ): DataFrame = {
       // the most favoured merge based on code length reduction
-      deltaL.groupBy("idx1").min("dL")
+      deltaL.groupBy("src").min("dL")
       // filter away rows with non-negative dL
       .filter( "dL >= 0" )
-      // join with deltaL to retrieve idx2
+      // join with deltaL to retrieve dst
       .alias("bm")
       .join( deltaL,
-        col("bm.idx1")===col("deltaL.idx1") && col("deltaL.dL")===col("bm.dL")
+        col("bm.src")===col("deltaL.src") && col("deltaL.dL")===col("bm.dL")
       )
-      .select( "idx1", "idx2" )
+      .select( "src", "dst" )
     }
 
   /***************************************************************************
    * map each network.vertices to a new module
    * according to connected components of m2Merge
-   * | idx , module |
+   * | id , module |
    ***************************************************************************/
     def calModuleMap( network: Network, m2Merge: DataFrame ): DataFrame = {
       GraphFrame( network.graph.vertices, m2Merge )
       .connectedComponents.run
-      .select( col("idx"), col("components") as "module" )
+      .select( col("id"), col("components") as "module" )
     }
 
   /***************************************************************************
@@ -236,14 +236,14 @@ sealed class InfoFlow extends CommunityDetection
    *       newPartition nodes are all original nodes
    *   (2) moduleMap used only within this function for further calculations
    *       newPartition saved to graph, which is part of final result
-   * | idx , module |
+   * | id , module |
    ***************************************************************************/
     def calNewPartition( moduleMap: DataFrame, graphVertices: DataFrame ):
     DataFrame = {
       graphVertices.alias("original")
-      .join( moduleMap.alias("new"), col("idx"), "left_outer" )
+      .join( moduleMap.alias("new"), col("id"), "left_outer" )
       .select( col("node"),
-        when( col("idx").isNotNull, col("new.module") )
+        when( col("id").isNotNull, col("new.module") )
        .otherwise( "original.module" )
       )
     }
@@ -255,20 +255,20 @@ sealed class InfoFlow extends CommunityDetection
    * and will be subtracted from the w_i's
    * if the new indices are different, they are intermodular connections
    * and will be aggregated into w_ij's
-   * | idx1 , idx2 , iWj |
+   * | src , dst , iWj |
    ***************************************************************************/
     def calInterEdges(
       network: Network, moduleMap: DataFrame
     ): DataFrame = {
       network.graph.edges
       // map vertex indices to new ones
-      .join( moduleMap, col("idx1") === col("idx") )
-      .select( col("module") as "m1", col("idx2"), col("weight") )
-      .join( moduleMap, col("idx2") === col("idx") )
+      .join( moduleMap, col("src") === col("id") )
+      .select( col("module") as "m1", col("dst"), col("weight") )
+      .join( moduleMap, col("src") === col("id") )
       .select( col("m1"), col("module") as "m2", col("weight") )
-      .select( col("m1") as "idx1", col("m2") as "idx2", col("weight") )
+      .select( col("m1") as "src", col("m2") as "dst", col("weight") )
       // aggregate
-      .groupBy("idx1","idx2")
+      .groupBy("src","dst")
       .sum("weight")
     }
 
@@ -283,31 +283,31 @@ sealed class InfoFlow extends CommunityDetection
       // for exitw, we have to subtract intramodular edges in the next step
       val sumOnly = network.graph.vertices
       // map to new module index
-      .join( moduleMap, "idx" )
+      .join( moduleMap, "id" )
       // aggregate
       .groupBy("module").sum( "size", "prob", "exitw" )
       // name properly
-      .select( col("module") as "idx",  col("size"),  col("prob"),  col("exitw") )
+      .select( col("module") as "id",  col("size"),  col("prob"),  col("exitw") )
 
       // subtract intramodular edges from modular exit prob
       val intraEdges = interEdges
       // intramodular edges have same indices
-      .filter( "idx1 === idx2" )
+      .filter( "src === dst" )
       // aggregate
-      .groupBy("idx1").sum("exitw")
+      .groupBy("src").sum("exitw")
       // name properly
-      .select( col("idx1") as "idx", col("exitw") )
+      .select( col("src") as "id", col("exitw") )
 
       sumOnly.alias("m")
-      .join( intraEdges.alias("e"), col("idx"), "outer_left" )
-      .select( col("idx"), col("size"), col("prob"),
+      .join( intraEdges.alias("e"), col("id"), "outer_left" )
+      .select( col("id"), col("size"), col("prob"),
         // calculation of exitw
         // subtract intramodular edges from modular exit prob
         // if former exists
         when( col("e.exitw").isNotNull, col("m.exitw") -col("m.exitw") )
         .otherwise( col("m.exitw") ) as "exitw"
       )
-      .select( col("idx"), col("size"), col("prob"), col("exitw"),
+      .select( col("id"), col("size"), col("prob"), col("exitw"),
         // calculation of exitq
         // subtract intramodular edges from modular exit prob
         // if former exists
