@@ -31,7 +31,7 @@ object PajekReader
 
       // store sectioning of file
       // defaults as "__begin"
-      // which will give error if the first line in file is not a section declare
+      // to give error if the first line in file is not a section declare
       var section: String = "__begin"
 
       // the number of vertices
@@ -168,6 +168,9 @@ object PajekReader
             +" line "+lineNumber.toString )
         }
 
+  /***************************************************************************
+   * prepare for next loop
+   ***************************************************************************/
         section = newSection
         lineNumber += 1
       }
