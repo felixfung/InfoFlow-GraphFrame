@@ -52,7 +52,9 @@ object CommunityDetection {
       val sum_plogp_q = -2* modules.select( plogp()(col("exitq")) as "plogp_q")
         .groupBy().sum("plogp_q")
         .head.getDouble(0)
-      val sum_plogp_pq = modules.select( plogp()(col("prob")+col("exitq")) as "plogp_pq" )
+      val sum_plogp_pq = modules.select(
+        plogp()( col("prob") +col("exitq") )
+      as "plogp_pq" )
         .groupBy().sum("plogp_pq")
         .head.getDouble(0)
       plogp_sum_q +sum_plogp_q +probSum +sum_plogp_pq
