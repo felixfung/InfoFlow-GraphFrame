@@ -32,7 +32,7 @@ sealed class InfoMap extends CommunityDetection
     // the table that lists all possible merges,
     // the modular properties of the two vertices
     // and change in code length based on the hypothetical modular merge
-    // | idx1 , idx2 , n1 , n2 , p1 , p2 , w1 , w2 , w1221 , q1 , q2 , dL |
+    // | src , dst , n1 , n2 , p1 , p2 , w1 , w2 , w1221 , q1 , q2 , dL |
     // where  n = size
     //        p = prob
     //        w = exitw
@@ -74,7 +74,7 @@ sealed class InfoMap extends CommunityDetection
           else {
             val newVertices = network.graph.vertices
             .groupBy().count
-            .select( lit(1) as "idx", lit(network.nodeNumber) as "size",
+            .select( lit(1) as "id", lit(network.nodeNumber) as "size",
               lit(1) as "prob", lit(0) as "exitw", lit(0) as "exitq" )
             val newEdges = network.graph.edges.filter("false")
             val newNetwork = Network(
@@ -95,7 +95,7 @@ sealed class InfoMap extends CommunityDetection
             +" with code length reduction " +deltaL.toString +"\n", false )
 
           // register partition to lower merge index
-          val newGraph = GraphFrame( graph.vertices.select( col("idx"), col("name"),
+          val newGraph = GraphFrame( graph.vertices.select( col("id"), col("name"),
             when( col("module")===m1 || col("module")===m2, m12 ).otherwise("module") ),
             graph.edges
           )
@@ -143,13 +143,13 @@ sealed class InfoMap extends CommunityDetection
         edgeList
         // find minimum change in codelength
         .groupBy().min("dL")
-        // if multiple merges has the same dL, grab the one with smallest idx1
+        // if multiple merges has the same dL, grab the one with smallest src
         .join( edgeList, "dL" )
-        .groupBy().min("idx1")
+        .groupBy().min("src")
         .alias("select").join( edgeList.alias("b"),
-          col("select.idx1")===col("b.idx1") && col("select.dL")===col("b.dL")
+          col("select.src")===col("b.src") && col("select.dL")===col("b.dL")
         )
-        .select("idx1","idx2","n1","n2","p1","p2","w1","w2","w1221","q1","q2","dL")
+        .select("src","dst","n1","n2","p1","p2","w1","w2","w1221","q1","q2","dL")
         .head
         match {
           case Row(m1:Long,m2:Long,n1:Long,n2:Long,p1:Double,p2:Double,w1:Double,w2:Double,w1221:Double,q1:Double,q2:Double,dL:Double)
@@ -193,35 +193,42 @@ sealed class InfoMap extends CommunityDetection
       ): DataFrame = {
         edgeList
         // delete merged edge
-        // when both idx1 and idx2 hit m1 and m2
+        // when both src and dst hit m1 and m2
         // at least one and perhaps two edges will be deleted
         .filter(
-          "!( idx1===m1 && idx2===m2 ) && !( idx1===m2 && idx2===m1 )"
+          "!( src===m1 && dst===m2 ) && !( src===m2 && dst===m1 )"
         )
-        // when one of idx1 or idx2 hit m1 or m2,
+        // when one of src or dst hit m1 or m2,
         // update its modular property
         // and recalculate dL
         .select(
-          when( col("idx1")===m1 || col("idx1")===m2, m12 ).otherwise(col("idx1")),
-          when( col("idx2")===m1 || col("idx2")===m2, m12 ).otherwise(col("idx2")),
-          when( col("idx1")===m1 || col("idx1")===m2, n12 ).otherwise(col("n1")),
-          when( col("idx2")===m1 || col("idx2")===m2, n12 ).otherwise(col("n2")),
-          when( col("idx1")===m1 || col("idx1")===m2, p12 ).otherwise(col("p1")),
-          when( col("idx2")===m1 || col("idx2")===m2, p12 ).otherwise(col("p2")),
-          when( col("idx1")===m1 || col("idx1")===m2, w12 ).otherwise(col("w1")),
-          when( col("idx2")===m1 || col("idx2")===m2, w12 ).otherwise(col("w2")),
+          when( col("src")===m1 || col("src")===m2, m12 ).otherwise(col("src")),
+          when( col("dst")===m1 || col("dst")===m2, m12 ).otherwise(col("dst")),
+          when( col("src")===m1 || col("src")===m2, n12 ).otherwise(col("n1")),
+          when( col("dst")===m1 || col("dst")===m2, n12 ).otherwise(col("n2")),
+          when( col("src")===m1 || col("src")===m2, p12 ).otherwise(col("p1")),
+          when( col("dst")===m1 || col("dst")===m2, p12 ).otherwise(col("p2")),
+          when( col("src")===m1 || col("src")===m2, w12 ).otherwise(col("w1")),
+          when( col("dst")===m1 || col("dst")===m2, w12 ).otherwise(col("w2")),
           col("w1221"),
-          when( col("idx1")===m1 || col("idx1")===m2, q12 ).otherwise(col("q1")),
-          when( col("idx2")===m1 || col("idx2")===m2, q12 ).otherwise(col("q2")),
+          when( col("src")===m1 || col("src")===m2, q12 ).otherwise(col("q1")),
+          when( col("dst")===m1 || col("dst")===m2, q12 ).otherwise(col("q2")),
           col("dL")
         )
         // aggregate edge exit probabilities
-        .groupBy("idx1","idx2").sum("w1221")
+        .groupBy("src","dst").sum("w1221")
         // calculate dL
-        .select(col("idx1"),col("idx2"),col("n1"),col("n2"),col("p1"),col("p2"),col("w1"),col("w2"),col("w1221"),col("q1"),col("q2"),
+        .select(
+          col("src"), col("dst"),
+          col("n1"), col("n2"),
+          col("p1"), col("p2"),
+          col("w1"), col("w2"), col("w1221"),
+          col("q1"), col("q2"),
           CommunityDetection.calDeltaL()(
-            lit(network.nodeNumber), col("n1"), col("n2"), col("p1"), col("p2"),
-            lit(network.tele), lit(qi_sum), col("q1"), col("q2"), (col("w1")+col("w2")-col("w1221"))
+            lit(network.nodeNumber), col("n1"), col("n2"),
+            col("p1"), col("p2"),
+            lit(network.tele), lit(qi_sum), col("q1"), col("q2"),
+            col("w1") +col("w2") -col("w1221")
           )
         )
       }
@@ -237,16 +244,16 @@ sealed class InfoMap extends CommunityDetection
 
         val newModules = network.graph.vertices
         // delete module
-        .filter("idx!=mDel")
+        .filter("id!=mDel")
         // put in new modular properties
-        .select( col("idx"),
-          when( col("idx")===mMod, col("n12") ).otherwise("size"),
-          when( col("idx")===mMod, col("p12") ).otherwise("prob"),
-          when( col("idx")===mMod, col("w12") ).otherwise("exitw"),
-          when( col("idx")===mMod, col("q12") ).otherwise("exitq")
+        .select( col("id"),
+          when( col("id")===mMod, col("n12") ).otherwise("size"),
+          when( col("id")===mMod, col("p12") ).otherwise("prob"),
+          when( col("id")===mMod, col("w12") ).otherwise("exitw"),
+          when( col("id")===mMod, col("q12") ).otherwise("exitq")
         )
 
-        val newEdges = newEdgeList.select("idx1","idx2","w1221")
+        val newEdges = newEdgeList.select("src","dst","w1221")
 
         Network(
           network.tele, network.nodeNumber,
@@ -260,7 +267,7 @@ sealed class InfoMap extends CommunityDetection
 
   /***************************************************************************
    * generate edgeList
-   * | idx1 , idx2 , n1 , n2 , p1 , p2 , w1 , w2 , w1221 , q1 , q2 , dL |
+   * | src , dst , n1 , n2 , p1 , p2 , w1 , w2 , w1221 , q1 , q2 , dL |
    * where n <=> size
    *       p <=> prob
    *       w <=> exitw
@@ -270,17 +277,17 @@ sealed class InfoMap extends CommunityDetection
    ***************************************************************************/
   def generateEdgeList( network: Network, qi_sum: Double ): DataFrame = {
     network.graph.edges.alias("e1")
-    // get all modular properties from "idx1" and "idx2"
-    .join( network.graph.vertices.alias("m1"), col("idx1") === col("m1.idx") )
-    .join( network.graph.vertices.alias("m2"), col("idx2") === col("m2.idx") )
+    // get all modular properties from "src" and "dst"
+    .join( network.graph.vertices.alias("m1"), col("src") === col("m1.id") )
+    .join( network.graph.vertices.alias("m2"), col("dst") === col("m2.id") )
     // find the opposite edge, needed for exitw calculation
     .join( network.graph.vertices.alias("e2"),
-      col("e1.idx1")===col("e2.idx2") && col("e1.idx2")===col("e2.idx1"),
+      col("e1.src")===col("e2.dst") && col("e1.dst")===col("e2.src"),
       "left_outer" )
     // list ni, pi, wi, for i=1,2
     // and calculate w12
     .select(
-      col("idx1"), col("idx2"),
+      col("src"), col("dst"),
       col("m1.size") as "n1", col("m2.size") as "n2",
       col("m1.prob") as "p1", col("m2.prob") as "p2",
       col("m1.exitw") as "w1", col("m2.exitw") as "w2",
@@ -292,15 +299,32 @@ sealed class InfoMap extends CommunityDetection
       .otherwise( col("e1.exitw") ) as "w1221"
     )
     // calculate q1, q2
-    .select( col("idx1"), col("idx2"), col("n1"), col("n2"), col("p1"), col("p2"), col("w1"), col("w2"), col("w1221"),
-      CommunityDetection.calQ()( lit(network.tele), lit(network.nodeNumber), col("n1"), col("p1"), col("w1") ) as "q1",
-      CommunityDetection.calQ()( lit(network.tele), lit(network.nodeNumber), col("n2"), col("p2"), col("w2") ) as "q2"
+    .select(
+      col("src"), col("dst"),
+      col("n1"), col("n2"),
+      col("p1"), col("p2"),
+      col("w1"), col("w2"), col("w1221"),
+      CommunityDetection.calQ()(
+        lit(network.tele), lit(network.nodeNumber),
+        col("n1"), col("p1"), col("w1")
+      ) as "q1",
+      CommunityDetection.calQ()(
+        lit(network.tele), lit(network.nodeNumber),
+        col("n2"), col("p2"), col("w2")
+      ) as "q2"
     )
     // calculate dL
-    .select( col("idx1"), col("idx2"), col("n1"), col("n2"), col("p1"), col("p2"), col("w1"), col("w2"), col("w1221"), col("q1"), col("q2"),
+    .select(
+      col("src"), col("dst"),
+      col("n1"), col("n2"),
+      col("p1"), col("p2"),
+      col("w1"), col("w2"), col("w1221"),
+      col("q1"), col("q2"),
       CommunityDetection.calDeltaL()(
-        lit(network.nodeNumber), col("n1"), col("n2"), col("p1"), col("p2"),
-        lit(network.tele), lit(qi_sum), col("q1"), col("q2"), (col("w1") +col("w2") -col("w1221"))
+        lit(network.nodeNumber), col("n1"), col("n2"),
+        col("p1"), col("p2"),
+        lit(network.tele), lit(qi_sum), col("q1"), col("q2"),
+        col("w1") +col("w2") -col("w1221")
       ) as "dL"
     )
   }
