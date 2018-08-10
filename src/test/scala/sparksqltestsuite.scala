@@ -20,8 +20,9 @@ class SparkSQLTestSuite extends FunSuite with BeforeAndAfter
     .config("spark.master","local[*]")
     .getOrCreate
   spark.sparkContext.setLogLevel("OFF")
+  spark.sparkContext.setCheckpointDir(".")
   import spark.implicits._
-  val sqlContext = new org.apache.spark.sql.SQLContext(sc)
+  val sqlContext = new org.apache.spark.sql.SQLContext(spark.sparkContext)
 
   /***************************************************************************
    * Terminate Spark Context
