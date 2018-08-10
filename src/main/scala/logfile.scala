@@ -5,13 +5,13 @@
    * merging progress data is dictated by the specific merge algorithm
    * generally involving the code length, number of merges, number of modules;
    * graph data involve:
-   *   vertices: | idx , size (number of nodes) , prob (ergodic frequency) |
-   *   edges: | idx1 , idx2 , weight (exit prob w/o tele) |
+   *   vertices: | id , size (number of nodes) , prob (ergodic frequency) |
+   *   edges: | src , dst , weight (exit prob w/o tele) |
    * equally important is the original graph
    * which provides a mapping from each node to each module index
    * and the names of each node
    * to be used in conjunction with the partitioning data
-   *     vertices: | idx , name , module |
+   *     vertices: | id , name , module |
    *     edges:    | from , to , exit prob. w/o tele |
    *
    * File formats:
@@ -80,7 +80,7 @@ sealed class LogFile(
     // network: reduced graph, where each node is a community
     network: GraphFrame,
     // graphFile: original graph, all nodes and edges
-    // vertices: | idx , name , module |
+    // vertices: | id , name , module |
     // edges: | from , to , exit prob. w/o tele |
     graphFile: GraphFrame,
     debugging: Boolean,
