@@ -48,12 +48,7 @@ sealed class InfoFlow extends CommunityDetection
       logFile.save( network.graph, graph, true, "net"+loop.toString )
 
       // truncate RDD lineage every ten loops
-      if( loop%10 == 0 ) {
-        Network.trim( network.graph.vertices )
-        Network.trim( network.graph.edges )
-        Network.trim( graph.vertices )
-        Network.trim( graph.edges )
-      }
+      if( loop%10 == 0 ) trim
 
       // calculate the deltaL table for all possible merges
       // | src , dst , dL |
@@ -62,6 +57,7 @@ sealed class InfoFlow extends CommunityDetection
       // module to merge
       // |module , module to seek merge to |
       val m2Merge = calm2Merge(deltaL)
+      m2Merge.cache
 
       // if m2Merge is empty, then no modules seek to merge
       // terminate loop
@@ -128,6 +124,13 @@ sealed class InfoFlow extends CommunityDetection
       recursiveMerge( loop+1, newNetwork, newGraph )
     }
 
+    def trim(): Unit = {
+      Network.trim( network.graph.vertices )
+      Network.trim( network.graph.edges )
+      Network.trim( graph.vertices )
+      Network.trim( graph.edges )
+    }
+
   /***************************************************************************
    * termination routine, log then return
    ***************************************************************************/
@@ -144,18 +147,20 @@ sealed class InfoFlow extends CommunityDetection
    * | src , dst , dL |
    ***************************************************************************/
     def calDeltaL( network: Network ): DataFrame = {
-      val qi_sum = network.graph.vertices.groupBy().sum("exitq").head.getDouble(0)
+      val qi_sum = network.graph.vertices
+        .groupBy().sum("exitq").head.getDouble(0)
+
       network.graph.edges.alias("e1")
       // get all modular properties from "src" and "dst"
       .join( network.graph.vertices.alias("m1"), col("src") === col("m1.id") )
       .join( network.graph.vertices.alias("m2"), col("dst") === col("m2.id") )
       // find the opposite edge, needed for exitw calculation
-      .join( network.graph.vertices.alias("e2"),
+      .join( network.graph.edges.alias("e2"),
         col("e1.src")===col("e2.dst") && col("e1.dst")===col("e2.src"),
         "left_outer" )
       // create table of change in code length of all possible merges
       .select(
-        col("src"), col("dst"),
+        col("e1.src"), col("e1.dst"),
         CommunityDetection.calDeltaL()(
           lit(network.nodeNumber), col("m1.size"), col("m2.size"), col("m1.prob"), col("m2.prob"),
           lit(network.tele), lit(qi_sum), col("m1.exitq"), col("m2.exitq"),
@@ -209,13 +214,13 @@ sealed class InfoFlow extends CommunityDetection
       // the most favoured merge based on code length reduction
       deltaL.groupBy("src").min("dL")
       // filter away rows with non-negative dL
-      .filter( "dL >= 0" )
+      .filter( "min(dL) >= 0" )
       // join with deltaL to retrieve dst
       .alias("bm")
-      .join( deltaL,
-        col("bm.src")===col("deltaL.src") && col("deltaL.dL")===col("bm.dL")
+      .join( deltaL.alias("dL"),
+        col("bm.src")===col("dL.src") && col("dL.dL")===col("bm.min(dL)")
       )
-      .select( "src", "dst" )
+      .select( "dL.src", "dL.dst" )
     }
 
   /***************************************************************************
@@ -226,7 +231,7 @@ sealed class InfoFlow extends CommunityDetection
     def calModuleMap( network: Network, m2Merge: DataFrame ): DataFrame = {
       GraphFrame( network.graph.vertices, m2Merge )
       .connectedComponents.run
-      .select( col("id"), col("components") as "module" )
+      .select( col("id"), col("component") as "module" )
     }
 
   /***************************************************************************
@@ -240,10 +245,12 @@ sealed class InfoFlow extends CommunityDetection
    ***************************************************************************/
     def calNewPartition( moduleMap: DataFrame, graphVertices: DataFrame ):
     DataFrame = {
+      println("calNewPartiion")
       graphVertices.alias("original")
-      .join( moduleMap.alias("new"), col("id"), "left_outer" )
-      .select( col("node"),
-        when( col("id").isNotNull, col("new.module") )
+      .join( moduleMap.alias("new"),
+        col("new.id") === col("original.id"), "left_outer" )
+      .select( col("original.id"),
+        when( col("new.id").isNotNull, col("new.module") )
        .otherwise( "original.module" )
       )
     }
@@ -260,16 +267,19 @@ sealed class InfoFlow extends CommunityDetection
     def calInterEdges(
       network: Network, moduleMap: DataFrame
     ): DataFrame = {
-      network.graph.edges
+      println("calInterEdges")
+      network.graph.edges.alias("edge")
       // map vertex indices to new ones
       .join( moduleMap, col("src") === col("id") )
-      .select( col("module") as "m1", col("dst"), col("weight") )
-      .join( moduleMap, col("src") === col("id") )
-      .select( col("m1"), col("module") as "m2", col("weight") )
-      .select( col("m1") as "src", col("m2") as "dst", col("weight") )
+      .select( col("module") as "m1", col("dst"), col("edge.exitw") )
+      .join( moduleMap, col("m1") === col("id") )
+      .select( col("m1"), col("module") as "m2", col("edge.exitw") )
+      .select( col("m1") as "src", col("m2") as "dst", col("edge.exitw") )
       // aggregate
       .groupBy("src","dst")
-      .sum("weight")
+      .sum("edge.exitw")
+      // rename
+      .select( col("src"), col("dst"), col("sum(exitw)") as "exitw" )
     }
 
   /***************************************************************************
@@ -278,6 +288,7 @@ sealed class InfoFlow extends CommunityDetection
     def calNewModules(
       network: Network, moduleMap: DataFrame, interEdges: DataFrame
     ): DataFrame = {
+      println("calNewModules")
       // aggregate size, prob, exitw over the same modular index
       // for size and prob, that gives the final result
       // for exitw, we have to subtract intramodular edges in the next step
@@ -287,20 +298,20 @@ sealed class InfoFlow extends CommunityDetection
       // aggregate
       .groupBy("module").sum( "size", "prob", "exitw" )
       // name properly
-      .select( col("module") as "id",  col("size"),  col("prob"),  col("exitw") )
+      .select( col("module") as "id",  col("sum(size)") as "size",  col("sum(prob)") as "prob",  col("sum(exitw)") as "exitw" )
 
       // subtract intramodular edges from modular exit prob
       val intraEdges = interEdges
       // intramodular edges have same indices
-      .filter( "src === dst" )
+      .filter( "src = dst" )
       // aggregate
       .groupBy("src").sum("exitw")
       // name properly
-      .select( col("src") as "id", col("exitw") )
+      .select( col("src") as "id", col("sum(exitw)") as "exitw" )
 
       sumOnly.alias("m")
-      .join( intraEdges.alias("e"), col("id"), "outer_left" )
-      .select( col("id"), col("size"), col("prob"),
+      .join( intraEdges.alias("e"), col("m.id") === col("e.id"), "left_outer" )
+      .select( col("m.id"), col("size"), col("prob"),
         // calculation of exitw
         // subtract intramodular edges from modular exit prob
         // if former exists
@@ -311,7 +322,10 @@ sealed class InfoFlow extends CommunityDetection
         // calculation of exitq
         // subtract intramodular edges from modular exit prob
         // if former exists
-        CommunityDetection.calQ()( lit(network.tele), lit(network.nodeNumber), col("size"), col("prob"), col("exitw") )
+        CommunityDetection.calQ()(
+          lit(network.tele), lit(network.nodeNumber),
+          col("size"), col("prob"), col("exitw")
+        )
         as "exitq"
       )
     }
