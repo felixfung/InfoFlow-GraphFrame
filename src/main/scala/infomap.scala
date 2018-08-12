@@ -173,8 +173,11 @@ sealed class InfoMap extends CommunityDetection
         val p12 = p1 +p2
         val w12 = w1 +w2 -w1221
 
-        val q12 = CommunityDetection.calQ_(
-          network.tele, network.nodeNumber, n12, p12, w12 )
+        val q12 = (
+          network.tele *(network.nodeNumber-n12)
+          /(network.nodeNumber-1) *p12
+          +(1-network.tele) *w12
+        )
 
         ( m12, n12, p12, q12, w12 )
       }

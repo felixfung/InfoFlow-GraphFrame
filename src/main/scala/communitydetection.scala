@@ -47,7 +47,7 @@ object CommunityDetection {
   // and the sum_node of plogp(prob) (can only be calculated with full graph)
   def calCodelength( modules: DataFrame, probSum: Double ): Double = {
     if( modules.groupBy().count.head.getLong(0) > 1 ) {
-      val plogp_sum_q: Double = plogp_( modules.groupBy().sum("exitq")
+      val plogp_sum_q: Double = plogpd( modules.groupBy().sum("exitq")
         .head.getDouble(0) )
       val sum_plogp_q = -2* modules.select( plogp()(col("exitq")) as "plogp_q")
         .groupBy().sum("plogp_q")
@@ -65,35 +65,7 @@ object CommunityDetection {
       -probSum
   }
 
-  // calculates the change in code length
-  // when two modules are merged
-  def calDeltaL_(
-    nodeNumber: Long,
-    n1: Long, n2: Long, p1: Double, p2: Double,
-    tele: Double, qi_sum: Double, q1: Double, q2: Double,
-    w12: Double
-  ): Double = {
-    val q12 = calQ_( tele, nodeNumber, n1+n2, p1+p2, w12 )
-    //calDeltaL_v(qi_sum,q1,q2,q12) +calDeltaL_nv(p1,p2,q1,q2,q12)
-    (
-      plogp_( qi_sum +q12-q1-q2 )
-      -plogp_( qi_sum )
-      -2.0*plogp_(q12) +2.0*plogp_(q1) +2.0*plogp_(q2)
-      +plogp_(p1+p2+q12) -plogp_(p1+q1) -plogp_(p2+q2)
-    )
-  }
-
-  // calculates the probabilty of exiting a module (including teleportation)
-  def calQ_(
-    tele: Double,
-    nodeNumber: Long, size: Double, prob: Double,
-    exitw: Double
-  ): Double = (
-    tele *(nodeNumber-size) /(nodeNumber-1) *prob // teleportation
-    +(1-tele) *exitw                              // random walk
-  )
-
-  def plogp_( double: Double ): Double = {
+  def plogpd( double: Double ): Double = {
     def log( double: Double ) = Math.log(double)/Math.log(2.0)
     double *log( double )
   }
