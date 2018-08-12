@@ -21,14 +21,14 @@ object CommunityDetectionTest
     // perform calculations
     val graph0 = GraphReader( sqlContext, inputFile )
     val net0 = Network.init( graph0, 0.15 )
-    val logFile = new LogFile("","","","",false,false,true)
+    val logFile = new LogFile("log.txt","","","",false,false,true)
     val (net1,graph1) = communityDetection( net0, graph0, logFile )
 
     // check partitioning
     val partitionResult = graph1.vertices
     .select( col("id"), col("module") )
     .collect.toSet
-    val partitionSuccess: Boolean = partitionResult != partitionExpected
+    val partitionSuccess: Boolean = partitionResult == partitionExpected
 
     // check codelength
     val codelengthSuccess: Boolean =
