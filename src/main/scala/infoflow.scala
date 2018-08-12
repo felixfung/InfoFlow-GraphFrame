@@ -62,7 +62,7 @@ sealed class InfoFlow extends CommunityDetection
       // if m2Merge is empty, then no modules seek to merge
       // terminate loop
       if( m2Merge.count == 0 )
-        terminate( loop, network, graph )
+        return terminate( loop, network, graph )
 
       // map each network.vertices to a new module
       // according to connected components of m2Merge
@@ -98,7 +98,7 @@ sealed class InfoFlow extends CommunityDetection
       val newCodelength = CommunityDetection.calCodelength(
         newModules, network.probSum )
       if( newCodelength >= network.codelength )
-        terminate( loop, network, graph )
+        return terminate( loop, network, graph )
 
       // logging: merge details
       logFile.write( "Merge " +(loop+1).toString
@@ -245,7 +245,6 @@ sealed class InfoFlow extends CommunityDetection
    ***************************************************************************/
     def calNewPartition( moduleMap: DataFrame, graphVertices: DataFrame ):
     DataFrame = {
-      println("calNewPartiion")
       graphVertices.alias("original")
       .join( moduleMap.alias("new"),
         col("new.id") === col("original.id"), "left_outer" )
@@ -267,7 +266,6 @@ sealed class InfoFlow extends CommunityDetection
     def calInterEdges(
       network: Network, moduleMap: DataFrame
     ): DataFrame = {
-      println("calInterEdges")
       network.graph.edges.alias("edge")
       // map vertex indices to new ones
       .join( moduleMap, col("src") === col("id") )
@@ -288,7 +286,6 @@ sealed class InfoFlow extends CommunityDetection
     def calNewModules(
       network: Network, moduleMap: DataFrame, interEdges: DataFrame
     ): DataFrame = {
-      println("calNewModules")
       // aggregate size, prob, exitw over the same modular index
       // for size and prob, that gives the final result
       // for exitw, we have to subtract intramodular edges in the next step
