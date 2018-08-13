@@ -192,7 +192,7 @@ object PajekReader
         .config("spark.master", "local[*]")
         .getOrCreate()
       import spark.implicits._
-
+//import com.typesafe.scalalogging.slf4j.LazyLogging
   /***************************************************************************
    * generate vertices DataFrame
    ***************************************************************************/

@@ -47,7 +47,7 @@ object CommunityDetection {
   // and the sum_node of plogp(prob) (can only be calculated with full graph)
   def calCodelength( modules: DataFrame, probSum: Double ): Double = {
     if( modules.groupBy().count.head.getLong(0) > 1 ) {
-      val plogp_sum_q: Double = plogpd( modules.groupBy().sum("exitq")
+      val plogp_sum_q = plogpd( modules.groupBy().sum("exitq")
         .head.getDouble(0) )
       val sum_plogp_q = -2* modules.select( plogp()(col("exitq")) as "plogp_q")
         .groupBy().sum("plogp_q")
@@ -57,12 +57,13 @@ object CommunityDetection {
       as "plogp_pq" )
         .groupBy().sum("plogp_pq")
         .head.getDouble(0)
-      plogp_sum_q +sum_plogp_q +probSum +sum_plogp_pq
+      plogp_sum_q +sum_plogp_q -probSum +sum_plogp_pq
     }
-    else
+    else {
     // if the entire graph is merged into one module,
     // there is easy calculation
       -probSum
+    }
   }
 
   def plogpd( double: Double ): Double = {
