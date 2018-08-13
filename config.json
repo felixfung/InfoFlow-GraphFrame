@@ -4,10 +4,10 @@
     "Algo": "InfoFlow",
     "tele": "0.15",
     "log": {
-        "log path": "Output/log.txt",
+        "log path": "log.txt",
         "Parquet path": "",
         "RDD path": "",
-        "Json path": "Output/graph.json",
+        "Json path": "graph.json",
         "save partition": "true",
         "save name": "true",
         "debug": "true"
