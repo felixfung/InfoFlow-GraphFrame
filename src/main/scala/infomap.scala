@@ -150,6 +150,7 @@ sealed class InfoMap extends CommunityDetection
         edgeList
         // find minimum change in codelength
         .groupBy().min("dL")
+        .select( col("min(dL)") as "dL" )
         // if multiple merges has the same dL, grab the one with smallest src
         .join( edgeList, "dL" )
         .groupBy().min("src")
@@ -230,11 +231,14 @@ sealed class InfoMap extends CommunityDetection
         // aggregate edge exit probabilities
         .groupBy("src","dst").sum("w1221")
         // calculate dL
+        .alias("agg")
+        .join( edgeList.alias("edge"),
+          col("agg.src")===col("edge.src") && col("agg.dst")===col("edge.dst") )
         .select(
-          col("src"), col("dst"),
+          col("edge.src"), col("edge.dst"),
           col("n1"), col("n2"),
           col("p1"), col("p2"),
-          col("w1"), col("w2"), col("w1221"),
+          col("w1"), col("w2"), col("sum(w1221)") as "w1221",
           col("q1"), col("q2"),
           CommunityDetection.calDeltaL()(
             lit(network.nodeNumber), col("n1"), col("n2"),
