@@ -11,7 +11,7 @@ import org.apache.spark.SparkContext._
 class InfoFlowTest extends SparkSQLTestSuite
 {
 
-  test("InfoFlow trivial network") {
+  ignore("InfoFlow trivial network") {
     val (success,net1) = CommunityDetectionTest(
       sqlContext,
       "Nets/trivial.net",
@@ -22,7 +22,7 @@ class InfoFlowTest extends SparkSQLTestSuite
     assert( success )
   }
 
-  ignore("InfoFlow small network") {
+  test("InfoFlow small network") {
     val (success,net1) = CommunityDetectionTest(
       sqlContext,
       "Nets/small.net",

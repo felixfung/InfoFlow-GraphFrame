@@ -250,7 +250,8 @@ sealed class InfoFlow extends CommunityDetection
         col("new.id") === col("original.id"), "left_outer" )
       .select( col("original.id"),
         when( col("new.id").isNotNull, col("new.module") )
-       .otherwise( "original.module" )
+       .otherwise( col("original.module") )
+       as "module"
       )
     }
 
@@ -295,7 +296,10 @@ sealed class InfoFlow extends CommunityDetection
       // aggregate
       .groupBy("module").sum( "size", "prob", "exitw" )
       // name properly
-      .select( col("module") as "id",  col("sum(size)") as "size",  col("sum(prob)") as "prob",  col("sum(exitw)") as "exitw" )
+      .select(
+        col("module") as "id",  col("sum(size)") as "size",
+        col("sum(prob)") as "prob",  col("sum(exitw)") as "exitw"
+      )
 
       // subtract intramodular edges from modular exit prob
       val intraEdges = interEdges
