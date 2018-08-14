@@ -74,8 +74,13 @@ sealed class InfoMap extends CommunityDetection
           else {
             val newVertices = network.graph.vertices
             .groupBy().count
-            .select( lit(1) as "id", lit(network.nodeNumber) as "size",
-              lit(1) as "prob", lit(0) as "exitw", lit(0) as "exitq" )
+            .select(
+              lit(1) as "id",
+              lit(network.nodeNumber) as "size",
+              lit(1) as "prob",
+              lit(0) as "exitw",
+              lit(0) as "exitq"
+            )
             val newEdges = network.graph.edges.filter("false")
             val newNetwork = Network(
               network.tele, network.nodeNumber,
@@ -95,8 +100,10 @@ sealed class InfoMap extends CommunityDetection
             +" with code length reduction " +deltaL.toString +"\n", false )
 
           // register partition to lower merge index
-          val newGraph = GraphFrame( graph.vertices.select( col("id"), col("name"),
-            when( col("module")===m1 || col("module")===m2, m12 ).otherwise("module") ),
+          val newGraph = GraphFrame(
+            graph.vertices.select( col("id"), col("name"),
+            when( col("module")===m1 || col("module")===m2, m12 )
+            .otherwise("module") ),
             graph.edges
           )
           val newEdgeList = updateEdgeList(m1,m2,m12,n12,p12,w12,q12,edgeList)
@@ -149,10 +156,12 @@ sealed class InfoMap extends CommunityDetection
         .alias("select").join( edgeList.alias("b"),
           col("select.src")===col("b.src") && col("select.dL")===col("b.dL")
         )
-        .select("src","dst","n1","n2","p1","p2","w1","w2","w1221","q1","q2","dL")
+        .select("src","dst","n1","n2","p1","p2",
+          "w1","w2","w1221","q1","q2","dL")
         .head
         match {
-          case Row(m1:Long,m2:Long,n1:Long,n2:Long,p1:Double,p2:Double,w1:Double,w2:Double,w1221:Double,q1:Double,q2:Double,dL:Double)
+          case Row(m1:Long,m2:Long,n1:Long,n2:Long,p1:Double,p2:Double,
+            w1:Double,w2:Double,w1221:Double,q1:Double,q2:Double,dL:Double)
           => (m1,m2,n1,n2,p1,p2,w1,w2,w1221,q1,q2,dL)
         }
       }
