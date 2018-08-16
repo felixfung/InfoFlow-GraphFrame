@@ -92,7 +92,11 @@ sealed class InfoFlow extends CommunityDetection
       .cache
 
       val newModules = calNewModules( network, moduleMap, interEdges )
-      val newNodeNumber = newModules.groupBy().count.head.getLong(0)
+      val newNodeNumber = {
+        val count = newModules.groupBy().count
+        count.cache
+        count.head.getLong(0)
+      }
 
       // calculate new code length, and terminate if bigger than old
       val newCodelength = CommunityDetection.calCodelength(
@@ -147,8 +151,11 @@ sealed class InfoFlow extends CommunityDetection
    * | src , dst , dL |
    ***************************************************************************/
     def calDeltaL( network: Network ): DataFrame = {
-      val qi_sum = network.graph.vertices
-        .groupBy().sum("exitq").head.getDouble(0)
+      val qi_sum = {
+        val sum = network.graph.vertices.groupBy().sum("exitq")
+        sum.cache
+        sum.head.getDouble(0)
+      }
 
       network.graph.edges.alias("e1")
       // get all modular properties from "src" and "dst"
@@ -216,7 +223,7 @@ sealed class InfoFlow extends CommunityDetection
       // the most favoured merge based on code length reduction
       deltaL.groupBy("src").min("dL")
       // filter away rows with non-negative dL
-      .filter( "min(dL) >= 0" )
+      .filter( "min(dL) <= 0" )
       // join with deltaL to retrieve dst
       .alias("bm")
       .join( deltaL.alias("dL"),
