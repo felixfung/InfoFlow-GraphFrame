@@ -40,6 +40,7 @@ sealed class InfoMap extends CommunityDetection
     //        q = exitq
     //       dL = non-volatile change in codelength
     val edgeList = generateEdgeList( network, qi_sum )
+    edgeList.show
 
   /***************************************************************************
    * greedily merge modules until code length is minimized
@@ -149,21 +150,35 @@ sealed class InfoMap extends CommunityDetection
       def findMerge( edgeList: DataFrame ) = {
         edgeList
         // find minimum change in codelength
-        .groupBy().min("dL")
-        .select( col("min(dL)") as "dL" )
         // if multiple merges has the same dL, grab the one with smallest src
-        .join( edgeList, "dL" )
-        .groupBy().min("src")
+        .groupBy("src").min("dL")
+        .orderBy("min(dL)","src")
+        .limit(1)
         .alias("select").join( edgeList.alias("b"),
-          col("select.src")===col("b.src") && col("select.dL")===col("b.dL")
+          col("select.min(dL)")===col("b.dL")
+          && col("select.src")===col("b.src")
         )
-        .select("src","dst","n1","n2","p1","p2",
-          "w1","w2","w1221","q1","q2","dL")
-        .head
-        match {
-          case Row(m1:Long,m2:Long,n1:Long,n2:Long,p1:Double,p2:Double,
+        .select( col("b.src"), col("b.dst"), col("n1"), col("n2"),
+          col("p1"), col("p2"), col("w1"), col("w2"), col("w1221"),
+          col("q1"), col("q2"), col("b.dL") )
+        .limit(1).toDF.map {
+          case edge => (
+            edge.getAs[Long]("src"),
+            edge.getAs[Long]("dst"),
+            edge.getAs[Long]("n1"),
+            edge.getAs[Long]("n2"),
+            edge.getAs[Double]("p1"),
+            edge.getAs[Double]("p2"),
+            edge.getAs[Double]("w1"),
+            edge.getAs[Double]("w2"),
+            edge.getAs[Double]("w1221"),
+            edge.getAs[Double]("q1"),
+            edge.getAs[Double]("q2"),
+            edge.getAs[Double]("dL")
+          )
+          /*case Row(m1:Long,m2:Long,n1:Long,n2:Long,p1:Double,p2:Double,
             w1:Double,w2:Double,w1221:Double,q1:Double,q2:Double,dL:Double)
-          => (m1,m2,n1,n2,p1,p2,w1,w2,w1221,q1,q2,dL)
+          => (m1,m2,n1,n2,p1,p2,w1,w2,w1221,q1,q2,dL)*/
         }
       }
 
@@ -244,7 +259,8 @@ sealed class InfoMap extends CommunityDetection
             lit(network.nodeNumber), col("n1"), col("n2"),
             col("p1"), col("p2"),
             lit(network.tele), lit(qi_sum), col("q1"), col("q2"),
-            col("w1") +col("w2") -col("w1221")
+            col("w1") +col("w2") -col("w1221"),
+            lit( network.probSum ), lit( network.codelength )
           )
         )
       }
@@ -297,13 +313,13 @@ sealed class InfoMap extends CommunityDetection
     .join( network.graph.vertices.alias("m1"), col("src") === col("m1.id") )
     .join( network.graph.vertices.alias("m2"), col("dst") === col("m2.id") )
     // find the opposite edge, needed for exitw calculation
-    .join( network.graph.vertices.alias("e2"),
+    .join( network.graph.edges.alias("e2"),
       col("e1.src")===col("e2.dst") && col("e1.dst")===col("e2.src"),
       "left_outer" )
     // list ni, pi, wi, for i=1,2
     // and calculate w12
     .select(
-      col("src"), col("dst"),
+      col("e1.src") as "src", col("e1.dst") as "dst",
       col("m1.size") as "n1", col("m2.size") as "n2",
       col("m1.prob") as "p1", col("m2.prob") as "p2",
       col("m1.exitw") as "w1", col("m2.exitw") as "w2",
@@ -340,7 +356,8 @@ sealed class InfoMap extends CommunityDetection
         lit(network.nodeNumber), col("n1"), col("n2"),
         col("p1"), col("p2"),
         lit(network.tele), lit(qi_sum), col("q1"), col("q2"),
-        col("w1") +col("w2") -col("w1221")
+        col("w1") +col("w2") -col("w1221"),
+        lit( network.probSum ), lit( network.codelength )
       ) as "dL"
     )
   }

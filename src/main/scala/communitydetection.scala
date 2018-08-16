@@ -70,23 +70,24 @@ object CommunityDetection {
     }
   }
 
-  /***************************************************************************
-   * here is the Column version of calculation functions
-   * which can be used within df.select()
-   ***************************************************************************/
-
   def calDeltaL()(
     nodeNumber: Column,
     n1: Column, n2: Column, p1: Column, p2: Column,
     tele: Column, qi_sum: Column, q1: Column, q2: Column,
-    w12: Column
+    w12: Column,
+    probSum: Column, codelength: Column
   ): Column = {
     val q12 = calQ()( tele, nodeNumber, n1+n2, p1+p2, w12 )
-    (
+    when( q12 > lit(0),
       plogp()( qi_sum +q12-q1-q2 )
       -plogp()( qi_sum )
       -lit(2.0)*( plogp()(q12) +plogp()(q1) +plogp()(q2) )
       +plogp()(p1+p2+q12) -plogp()(p1+q1) -plogp()(p2+q2)
+    )
+    // if there is only one module, then the standard formula doesn't work
+    // and needs to calculate dL via network.probSum - current codelength
+    .otherwise(
+      -probSum -codelength
     )
   }
  

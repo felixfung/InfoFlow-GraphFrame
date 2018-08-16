@@ -162,7 +162,8 @@ sealed class InfoFlow extends CommunityDetection
       .select(
         col("e1.src"), col("e1.dst"),
         CommunityDetection.calDeltaL()(
-          lit(network.nodeNumber), col("m1.size"), col("m2.size"), col("m1.prob"), col("m2.prob"),
+          lit(network.nodeNumber), col("m1.size"), col("m2.size"),
+          col("m1.prob"), col("m2.prob"),
           lit(network.tele), lit(qi_sum), col("m1.exitq"), col("m2.exitq"),
           // calculation of the exit probability
           // of hypothetically merged module between m1 and m2
@@ -171,7 +172,8 @@ sealed class InfoFlow extends CommunityDetection
             col("m1.exitw")+col("m2.exitw")-col("e1.exitw")-col("e2.exitw")
           ).otherwise(
             col("m1.exitw")+col("m2.exitw")-col("e1.exitw")
-          )
+          ),
+          lit( network.probSum ), lit( network.codelength )
         ) as "dL"
       )
     }
