@@ -69,30 +69,7 @@ sealed class InfoMap extends CommunityDetection
         val (m1,m2,n1,n2,p1,p2,w1,w2,w1221,q1,q2,deltaL) = findMerge(edgeList)
         val (m12,n12,p12,w12,q12) = calNewcal(m1,m2,n1,n2,p1,p2,w1,w2,w1221)
 
-        if( deltaL == 0 ) // iff the entire graph is merged into one module
-        {
-          if( network.codelength < -network.probSum )
-            terminate( loop, network, graph )
-          else {
-            val newVertices = network.graph.vertices
-            .groupBy().count
-            .select(
-              lit(1) as "id",
-              lit(network.nodeNumber) as "size",
-              lit(1) as "prob",
-              lit(0) as "exitw",
-              lit(0) as "exitq"
-            )
-            val newEdges = network.graph.edges.filter("false")
-            val newNetwork = Network(
-              network.tele, network.nodeNumber,
-              GraphFrame( newVertices, newEdges ),
-              network.probSum, -network.probSum
-            )
-            terminate( loop, newNetwork, GraphFrame(newVertices,newEdges) )
-          }
-        }
-        else if( deltaL > 0 )
+        if( deltaL > 0 )
           terminate( loop, network, graph )
         else { // merge two modules
           // log merging details
@@ -106,7 +83,7 @@ sealed class InfoMap extends CommunityDetection
             graph.vertices.select(
               col("id"), col("name"),
               when( col("id")===m1 || col("id")===m2, m12 )
-              .otherwise("id") as "module"
+              .otherwise( col("module") ) as "module"
             ),
             graph.edges
           )
@@ -280,7 +257,7 @@ sealed class InfoMap extends CommunityDetection
             lit(network.tele), lit(qi_sum), col("q1"), col("q2"),
             col("w1") +col("w2") -col("w1221"),
             lit( network.probSum ), lit( network.codelength )
-          )
+          ) as "dL"
         )
       }
 
