@@ -16,7 +16,7 @@ class SparkSQLTestSuite extends FunSuite with BeforeAndAfter
   var sc: SparkContext = _
   val spark = SparkSession
     .builder()
-    .appName("InfoFlow network intiation tests")
+    .appName("InfoFlow test")
     .config("spark.master","local[*]")
     .getOrCreate
   spark.sparkContext.setLogLevel("OFF")
