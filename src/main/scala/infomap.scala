@@ -82,7 +82,9 @@ sealed class InfoMap extends CommunityDetection
           val newGraph = GraphFrame(
             graph.vertices.select(
               col("id"), col("name"),
-              when( col("id")===m1 || col("id")===m2, m12 )
+              when(
+                col("module")===m1 || col("module")===m2, m12
+              )
               .otherwise( col("module") ) as "module"
             ),
             graph.edges
