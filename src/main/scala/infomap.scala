@@ -107,6 +107,34 @@ sealed class InfoMap extends CommunityDetection
    * routine finished, below are function definitions and tail recursive call
    ***************************************************************************/
       def trim( network: Network, graph: GraphFrame ): Unit = {
+        /*network.graph.vertices.rdd
+        .map {
+          case Row(id:Long,size:Long,prob:Double,exitw:Double,exitq:Double)
+          => (id,size,prob,exitw,exitq)
+        }
+        .toDF("id","size","prob","exitw","exitq")
+        network.graph.edges.rdd
+        .map {
+          case Row(src:Long,dst:Long,exitw:Double) => (src,dst,exitw)
+        }
+        .toDF("src","dst","exitw")
+        graph.vertices.rdd
+        .map {
+          case Row(id:Long,name:String,module:Long) => (id,name,module)
+        }
+        .toDF("id","name","module")
+        graph.edges.rdd
+        .map {
+          case Row(src:Long,dst:Long,exitw:Double) => (src,dst,exitw)
+        }
+        .toDF("src","dst","exitw")
+        edgeList.rdd
+        .map {
+          case Row(src:Long,dst:Long,n1:Long,n2:Long,p1:Double,p2:Double,
+            w1:Double,w2:Double,w1221:Double,q1:Double,q2:Double,dL:Double)
+          => (src,dst,n1,n2,p1,p2,w1,w2,w1221,q1,q2,dL)
+        }
+        .toDF("src","dst","n1","n2","p1","p2","w1","w2","w1221","q1","q2","dL")*/
         Network.trim( network.graph.vertices )
         Network.trim( network.graph.edges )
         Network.trim( graph.vertices )
