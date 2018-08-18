@@ -62,9 +62,24 @@ class NetworkTest extends SparkSQLTestSuite
   /***************************************************************************
    * Test Cases
    ***************************************************************************/
-
   import spark.implicits._
-  ignore("Check calculations for trivial network") {
+
+  test("Single node network") {
+    val vertices = List( (1,"1",1) ).toDF("id","name","module")
+    val edges = List( (1,"1",1) ).toDF("src","dst","exitw")
+    val graph0 = GraphFrame( vertices, edges )
+    val network = Network.init( graph0, 0.15 )
+    network.graph.vertices.show
+    network.graph.edges.show
+    assert(modulesEq(
+      network.graph.vertices.orderBy("id").collect.toList,
+      List( Row(1,1,1.0,0.0,0.0) ),
+      0.02
+    ))
+    assert( network.codelength === 0 )
+  }
+
+  test("Two-node network") {
     val vertices = List( (1,"1",1), (2,"2",2) ).toDF("id","name","module")
     val edges = List( (1,2,1), (2,1,1) ).toDF("src","dst","exitw")
     val graph0 = GraphFrame( vertices, edges )
@@ -75,17 +90,18 @@ class NetworkTest extends SparkSQLTestSuite
     assert(modulesEq(
       network.graph.vertices.orderBy("id").collect.toList,
       List( Row(1,1,0.5,0.5,0.5), Row(2,1,0.5,0.5,0.5) ),
-      0.1
+      0.02
     ))
     assert(edgesEq(
       network.graph.edges.orderBy("src","dst").collect.toList,
       List( Row(1,2,0.5), Row(2,1,0.5) ),
-      0.1
+      0.02
     ))
+    println(network.codelength)
     //assert( network.codelength === ??? )
   }
 
-  ignore("Trivial network with self loop should not change result") {
+  test("Trivial network with self loop should not change result") {
     val vertices = List( (1,"1",1), (2,"2",2) ).toDF("id","name","module")
     val edges = List( (1,2,1), (2,1,1), (1,1,1) ).toDF("src","dst","exitw")
     val graph0 = GraphFrame( vertices, edges )
@@ -93,16 +109,16 @@ class NetworkTest extends SparkSQLTestSuite
     assert(modulesEq(
       network.graph.vertices.orderBy("id").collect.toList,
       List( Row(1,1,0.5,0.5,0.5), Row(2,1,0.5,0.5,0.5) ),
-      0.1
+      0.02
     ))
     assert(edgesEq(
       network.graph.edges.orderBy("src","dst").collect.toList,
       List( Row(1,2,0.5), Row(2,1,0.5) ),
-      0.1
+      0.02
     ))
   }
 
-  ignore("PageRank calculation on non-trivial graph") {
+  test("Non-trivial graph") {
     val vertices = List(
       (1,"1",1), (2,"2",2), (3,"3",3), (4,"4",4)
     ).toDF("id","name","module")
@@ -119,7 +135,7 @@ class NetworkTest extends SparkSQLTestSuite
         Row( 3, 1, 0.395, 0.395, 0.395 ),
         Row( 4, 1, 0.0375, 0.0375, 0.0375 )
       ),
-      0.1
+      0.02
     ))
     assert(edgesEq(
       network.graph.edges.orderBy("src","dst").collect.toList,
@@ -130,11 +146,11 @@ class NetworkTest extends SparkSQLTestSuite
         Row( 3, 1, 1 *0.395 ),
         Row( 4, 3, 1 *0.0375 )
       ),
-      0.1
+      0.02
     ))
   }
 
-  test("Calculations with a lonely module") {
+  test("Two nodes with a lonely module") {
     val vertices = List( (1,"1",1), (2,"2",2), (3,"3",3) )
     .toDF("id","name","module")
     val edges = List( (1,2,1), (2,1,1) ).toDF("src","dst","exitw")

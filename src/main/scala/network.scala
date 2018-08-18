@@ -45,17 +45,25 @@ object Network
     // graph.edges: ( src: Long, dst: Long, exitw: Double )
 
     val graph1 = normalizeEdges( trimSelfEdge(graph0) )
+    graph1.cache
 
-    val nodeNumber: Long = graph1.vertices.groupBy().count.head.getLong(0)
+    val nodeNumber: Long = {
+      val count = graph1.vertices.groupBy().count
+      count.cache
+      count.head.getLong(0)
+    }
 
     // get PageRank ergodic frequency for each node
     val probUnnormalized = graph1.pageRank.resetProbability(tele).tol(0.01).run
     // normalize page rank
-    val probNorm = probUnnormalized.vertices.select(
-      col("id"), col("pagerank")
-    )
-    .groupBy().sum("pagerank")
-    .head.getDouble(0)
+    val probNorm = {
+      val sum = probUnnormalized.vertices.select(
+        col("id"), col("pagerank")
+      )
+      .groupBy().sum("pagerank")
+      sum.cache
+      sum.head.getDouble(0)
+    }
     val prob = probUnnormalized.vertices.select(
       col("id"), col("pagerank")/lit(probNorm) as "prob"
     )
@@ -65,18 +73,22 @@ object Network
     // w and q are mathematically identical to p
     // as long as there is at least one connection
     // | id , size , prob , exitw , exitq |
-    val modules = prob.join( graph1.edges.select(col("src")).distinct,
-      col("id") === col("src"), "left_outer"
-    )
-    .select(
-      col("id"),
-      lit(1) as "size",
-      col("prob"),
-      when( col("src").isNotNull, col("prob") )
+    val modules = {
+      val nodeCount = graph1.vertices.groupBy().count.head.getLong(0)
+      prob.join( graph1.edges.select(col("src")).distinct,
+        col("id") === col("src"), "left_outer"
+      )
+      .select(
+        col("id"),
+        lit(1) as "size",
+        col("prob"),
+        when( col("src").isNotNull, col("prob") )
         .otherwise(lit(0)) as "exitw",
-      when( col("src").isNotNull, col("prob") )
+        when( lit(nodeCount)===lit(1), 0 )
+        .when( col("src").isNotNull, col("prob") )
         .otherwise( lit(tele) *col("prob") ) as "exitq"
-    )
+      )
+    }
 
     // probability of transitioning within two modules w/o teleporting
     // | src , dst , exitw |
@@ -91,11 +103,14 @@ object Network
     )
 
     // calculate current code length
-    val probSum = modules.select(
-      CommunityDetection.plogp()( col("prob") ) as "plogp_p"
-    )
-    .groupBy().sum("plogp_p")
-    .head.getDouble(0)
+    val probSum = {
+      val sum = modules.select(
+        CommunityDetection.plogp()( col("prob") ) as "plogp_p"
+      )
+      .groupBy().sum("plogp_p")
+      sum.cache
+      sum.head.getDouble(0)
+    }
 
     val codelength = CommunityDetection.calCodelength( modules, probSum )
 
