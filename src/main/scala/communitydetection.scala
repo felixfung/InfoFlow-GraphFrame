@@ -47,6 +47,7 @@ object CommunityDetection {
   // and the sum_node of plogp(prob) (can only be calculated with full graph)
   def calCodelength( modules: DataFrame, probSum: Double ): Double = {
     if( modules.groupBy().count.head.getLong(0) > 1 ) {
+      modules.cache
       def plogpd( double: Double ): Double = {
         def log( double: Double ) = Math.log(double)/Math.log(2.0)
         double *log( double )
@@ -79,9 +80,8 @@ object CommunityDetection {
   ): Column = {
     val q12 = calQ()( tele, nodeNumber, n1+n2, p1+p2, w12 )
     when( q12 > lit(0),
-      plogp()( qi_sum +q12-q1-q2 )
-      -plogp()( qi_sum )
-      -lit(2.0)*( plogp()(q12) +plogp()(q1) +plogp()(q2) )
+      plogp()( qi_sum +q12-q1-q2 ) -plogp()( qi_sum )
+      -lit(2.0)*( plogp()(q12) -plogp()(q1) -plogp()(q2) )
       +plogp()(p1+p2+q12) -plogp()(p1+q1) -plogp()(p2+q2)
     )
     // if there is only one module, then the standard formula doesn't work
