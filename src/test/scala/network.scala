@@ -113,6 +113,7 @@ class NetworkTest extends SparkSQLTestSuite
       List( Row(1,2,0.5), Row(2,1,0.5) ),
       0.02
     ))
+    assert( network.codelength === 3 )
   }
 
   test("Non-trivial graph") {
@@ -145,13 +146,7 @@ class NetworkTest extends SparkSQLTestSuite
       ),
       0.02
     ))
+    assert( Math.abs( network.codelength -3.70 ) < 0.1 )
   }
 
-  test("Two nodes with a lonely module") {
-    val vertices = List( (1,"1",1), (2,"2",2), (3,"3",3) )
-    .toDF("id","name","module")
-    val edges = List( (1,2,1), (2,1,1) ).toDF("src","dst","exitw")
-    val graph0 = GraphFrame( vertices, edges )
-    val network = Network.init( graph0, 0.15 )
-  }
 }
