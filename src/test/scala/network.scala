@@ -69,8 +69,6 @@ class NetworkTest extends SparkSQLTestSuite
     val edges = List( (1,"1",1) ).toDF("src","dst","exitw")
     val graph0 = GraphFrame( vertices, edges )
     val network = Network.init( graph0, 0.15 )
-    network.graph.vertices.show
-    network.graph.edges.show
     assert(modulesEq(
       network.graph.vertices.orderBy("id").collect.toList,
       List( Row(1,1,1.0,0.0,0.0) ),
@@ -97,8 +95,7 @@ class NetworkTest extends SparkSQLTestSuite
       List( Row(1,2,0.5), Row(2,1,0.5) ),
       0.02
     ))
-    println(network.codelength)
-    //assert( network.codelength === ??? )
+    assert( network.codelength === 3 )
   }
 
   test("Trivial network with self loop should not change result") {
