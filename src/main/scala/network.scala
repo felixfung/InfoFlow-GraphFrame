@@ -44,7 +44,7 @@ object Network
     // graph.vertices: ( id: Long, name: String, module: Long )
     // graph.edges: ( src: Long, dst: Long, exitw: Double )
 
-    val graph1 = normalizeEdges( trimSelfEdge(graph0) )
+    val graph1 = normalizeEdges( aggregateEdges( trimSelfEdge(graph0) ) )
     graph1.cache
 
     val nodeNumber: Long = {
@@ -126,6 +126,14 @@ object Network
   def trimSelfEdge( graph: GraphFrame ): GraphFrame = {
     GraphFrame( graph.vertices,
       graph.edges.filter("src != dst")
+    )
+  }
+
+  // remove edges where the src and dst vertices are identical
+  def aggregateEdges( graph: GraphFrame ): GraphFrame = {
+    GraphFrame( graph.vertices,
+      graph.edges.groupBy("src","dst").sum("exitw")
+        .select( col("src"), col("dst"), col("sum(exitw)") as "exitw" )
     )
   }
 
