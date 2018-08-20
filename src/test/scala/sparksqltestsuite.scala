@@ -1,3 +1,9 @@
+  /***************************************************************************
+   * class that provides unit testing framework for SQL Spark
+   * inherit to have Spark initialization and termination handled automatically
+   * access Spark SQL and DataFrame/DataSet via sqlContext
+   ***************************************************************************/
+
 import org.scalatest.FunSuite
 import org.scalatest.BeforeAndAfter
 
