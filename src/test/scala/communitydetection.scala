@@ -23,13 +23,14 @@ object CommunityDetectionTest
     val net0 = Network.init( graph0, 0.15 )
     val logFile = new LogFile("log.txt","","","",false,false,true)
     val (net1,graph1) = communityDetection( net0, graph0, logFile )
-
+graph0.vertices.show
+graph1.vertices.show
     // check partitioning
     val partitionResult = graph1.vertices
     .select( col("id"), col("module") )
     .collect.toSet
     val partitionSuccess: Boolean = partitionResult == partitionExpected
-
+println(net1.codelength)
     // check codelength
     val codelengthSuccess: Boolean =
       Math.abs( codelengthExpected -net1.codelength ) <= 0.1
