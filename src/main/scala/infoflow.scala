@@ -239,7 +239,7 @@ sealed class InfoFlow extends CommunityDetection
    ***************************************************************************/
     def calModuleMap( network: Network, m2Merge: DataFrame ): DataFrame = {
       GraphFrame( network.graph.vertices, m2Merge )
-      .connectedComponents.run
+      .connectedComponents.setAlgorithm("graphx").run
       .select( col("id"), col("component") as "module" )
     }
 
