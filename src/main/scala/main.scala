@@ -50,33 +50,27 @@ object InfoFlowMain {
   /***************************************************************************
    * Initialize Spark Context and SQL Context
    ***************************************************************************/
-    val conf = new SparkConf()
+    /*val conf = new SparkConf()
       .setAppName("InfoFlow")
       .setMaster( config.master )
     val sc = new SparkContext(conf)
-    sc.setLogLevel("OFF")
-
-    val sqlContext = new org.apache.spark.sql.SQLContext(sc)
+    sc.setLogLevel("OFF")*/
 
     import org.apache.spark.sql.SparkSession
-    val spark = SparkSession
+    val ss = SparkSession
       .builder()
-      //.appName("Spark SQL basic example")
-      //.config("spark.some.config.option", "some-value")
+      .appName("InfoFlow")
+      .master(config.master)
       .getOrCreate()
-    import spark.implicits._
+    ss.sparkContext.setLogLevel("WARN")
+    import ss.implicits._
 
   /***************************************************************************
    * read, solve, save
    ***************************************************************************/
-    val graph0 = GraphReader( sqlContext, graphFile )
+    val graph0 = GraphReader( ss, graphFile )
     val net0 = Network.init( graph0, tele )
     val (net1,graph1) = communityDetection( net0, graph0, logFile )
     logFile.save( net1.graph, graph1, false, "" )
-
-  /***************************************************************************
-   * Stop Spark Context
-   ***************************************************************************/
-    sc.stop
   }
 }
