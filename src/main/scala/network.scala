@@ -45,28 +45,36 @@ object Network
     // graph.edges: ( src: Long, dst: Long, exitw: Double )
 
     val graph1 = normalizeEdges( aggregateEdges( trimSelfEdge(graph0) ) )
+    // val force = graph0.vertices.count
+    // val force2 = graph0.vertices.head.getLong(0)
+    // graph0.vertices.cache
+    // val force3 = graph0.vertices.head.getLong(0)
     graph1.cache
-
     val nodeNumber: Long = {
       val count = graph1.vertices.groupBy().count
       count.cache
+      count.rdd.count
       count.head.getLong(0)
     }
 
     // get PageRank ergodic frequency for each node
     val probUnnormalized = graph1.pageRank.resetProbability(tele).tol(0.01).run
+    probUnnormalized.vertices.cache
+
     // normalize page rank
     val probNorm = {
       val sum = probUnnormalized.vertices.select(
         col("id"), col("pagerank")
       )
       .groupBy().sum("pagerank")
+      sum.rdd.count
       sum.cache
       sum.head.getDouble(0)
     }
     val prob = probUnnormalized.vertices.select(
       col("id"), col("pagerank")/lit(probNorm) as "prob"
     )
+    prob.cache
 
     // modular information
     // since transition probability is normalized per 'src node,
@@ -89,6 +97,7 @@ object Network
         .otherwise( lit(tele) *col("prob") ) as "exitq"
       )
     }
+    modules.cache
 
     // probability of transitioning within two modules w/o teleporting
     // | src , dst , exitw |
@@ -101,6 +110,7 @@ object Network
       col("dst"),
       col("prob")*col("exitw") as "exitw"
     )
+    edges.cache
 
     // calculate current code length
     val probSum = {
@@ -108,6 +118,7 @@ object Network
         CommunityDetection.plogp()( col("prob") ) as "plogp_p"
       )
       .groupBy().sum("plogp_p")
+      sum.rdd.count
       sum.cache
       sum.head.getDouble(0)
     }
@@ -155,8 +166,9 @@ object Network
   // which should be performed within community detection algorithm iterations
   // to avoid stack overflow problem
   def trim( df: DataFrame ): Unit = {
+    df.cache
     df.rdd.localCheckpoint
-    df.rdd.count
+    val count = df.rdd.count
     //df.rdd.toDF
   }
 }
