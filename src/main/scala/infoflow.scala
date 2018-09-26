@@ -89,9 +89,11 @@ sealed class InfoFlow extends CommunityDetection
       // | src , dst , iWj |
       val interEdges = calInterEdges( network, moduleMap )
       // cache result, which is to calculate both newModules and newEdges
-      .cache
+      interEdges.cache
 
       val newModules = calNewModules( network, moduleMap, interEdges )
+      newModules.cache
+
       val newNodeNumber = {
         val count = newModules.groupBy().count
         count.cache
@@ -153,6 +155,7 @@ sealed class InfoFlow extends CommunityDetection
     def calDeltaL( network: Network ): DataFrame = {
       val qi_sum = {
         val sum = network.graph.vertices.groupBy().sum("exitq")
+        sum.rdd.count
         sum.cache
         sum.head.getDouble(0)
       }
