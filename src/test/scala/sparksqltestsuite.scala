@@ -19,21 +19,12 @@ class SparkSQLTestSuite extends FunSuite with BeforeAndAfter
   /***************************************************************************
    * Initialize Spark Context
    ***************************************************************************/
-  var sc: SparkContext = _
-  val spark = SparkSession
-    .builder()
+  val ss = SparkSession
+    .builder
     .appName("InfoFlow test")
     .config("spark.master","local[*]")
     .getOrCreate
-  spark.sparkContext.setLogLevel("OFF")
-  spark.sparkContext.setCheckpointDir("/tmp")
-  import spark.implicits._
-  val sqlContext = new org.apache.spark.sql.SQLContext(spark.sparkContext)
-
-  /***************************************************************************
-   * Terminate Spark Context
-   ***************************************************************************/
-  after {
-    if( sc != null ) sc.stop
-  }
+  ss.sparkContext.setLogLevel("OFF")
+  ss.sparkContext.setCheckpointDir("/tmp")
+  import ss.implicits._
 }

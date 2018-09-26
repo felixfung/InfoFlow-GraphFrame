@@ -4,14 +4,15 @@
    * and checking numerical results
    ***************************************************************************/
 
-import org.apache.spark.sql.SQLContext
+import org.apache.spark.sql._
+
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.functions.col
 
 object CommunityDetectionTest
 {
   def apply(
-    sqlContext: SQLContext,
+    ss: SparkSession,
     inputFile: String,
     communityDetection: CommunityDetection,
     partitionExpected: Set[Row],
@@ -19,7 +20,7 @@ object CommunityDetectionTest
   ): ( Boolean, Network ) = {
 
     // perform calculations
-    val graph0 = GraphReader( sqlContext, inputFile )
+    val graph0 = GraphReader( ss, inputFile )
     val net0 = Network.init( graph0, 0.15 )
     val logFile = new LogFile("log.txt","","","",false,false,true)
     val (net1,graph1) = communityDetection( net0, graph0, logFile )

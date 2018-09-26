@@ -12,9 +12,9 @@ class InfoMapTest extends SparkSQLTestSuite
 {
   val infoMap = new InfoMap
 
-  ignore("Trivial network") {
+  test("Trivial network") {
     val (success,net1) = CommunityDetectionTest(
-      sqlContext,
+      ss,
       "Nets/trivial.net",
       infoMap,
       Set( Row(1,1), Row(2,2) ),
@@ -25,7 +25,7 @@ class InfoMapTest extends SparkSQLTestSuite
 
   ignore("Small network") {
     val (success,net1) = CommunityDetectionTest(
-      sqlContext,
+      ss,
       "Nets/small.net",
       infoMap,
       Set( Row(1,1), Row(2,1), Row(3,3), Row(4,3) ),
@@ -36,7 +36,7 @@ class InfoMapTest extends SparkSQLTestSuite
 
   ignore("Asymmetric network") {
     val (success,net1) = CommunityDetectionTest(
-      sqlContext,
+      ss,
       "Nets/small-asym.net",
       infoMap,
       Set( Row(1,1), Row(2,1), Row(3,3) ),
@@ -47,7 +47,7 @@ class InfoMapTest extends SparkSQLTestSuite
 
   ignore("Simple network") {
     val (success,net1) = CommunityDetectionTest(
-      sqlContext,
+      ss,
       "Nets/simple.net",
       infoMap,
       Set( Row(1,1), Row(2,1), Row(3,1), Row(4,4), Row(5,4), Row(6,4) ),
@@ -58,7 +58,7 @@ class InfoMapTest extends SparkSQLTestSuite
 
   ignore("Reproduce Rosvall and Bergstrom 2008 sample network") {
     val (success,net1) = CommunityDetectionTest(
-      sqlContext,
+      ss,
       "Nets/rosvall.net",
       infoMap,
       Set(
@@ -76,7 +76,7 @@ class InfoMapTest extends SparkSQLTestSuite
 
   ignore("Modularity test 1") {
     val (success,net1) = CommunityDetectionTest(
-      sqlContext,
+      ss,
       "Nets/infoflow-vs-modularity1.net",
       infoMap,
       Set(
@@ -93,7 +93,7 @@ class InfoMapTest extends SparkSQLTestSuite
 
   ignore("Modularity test 2") {
     val (success,net1) = CommunityDetectionTest(
-      sqlContext,
+      ss,
       "Nets/infoflow-vs-modularity2.net",
       infoMap,
       Set(

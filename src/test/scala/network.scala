@@ -62,7 +62,7 @@ class NetworkTest extends SparkSQLTestSuite
   /***************************************************************************
    * Test Cases
    ***************************************************************************/
-  import spark.implicits._
+  import ss.implicits._
 
   test("Single node network") {
     val vertices = List( (1,"1",1) ).toDF("id","name","module")

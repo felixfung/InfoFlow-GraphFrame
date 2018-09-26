@@ -11,9 +11,9 @@ import org.apache.spark.SparkContext._
 class InfoFlowTest extends SparkSQLTestSuite
 {
 
-  ignore("Trivial network") {
+  test("Trivial network") {
     val (success,net1) = CommunityDetectionTest(
-      sqlContext,
+      ss,
       "Nets/trivial.net",
       new InfoFlow,
       Set( Row(1,1), Row(2,2) ),
@@ -22,9 +22,9 @@ class InfoFlowTest extends SparkSQLTestSuite
     assert( success )
   }
 
-  ignore("Small network") {
+  test("Small network") {
     val (success,net1) = CommunityDetectionTest(
-      sqlContext,
+      ss,
       "Nets/small.net",
       new InfoFlow,
       Set( Row(1,1), Row(2,1), Row(3,3), Row(4,3) ),
@@ -33,9 +33,9 @@ class InfoFlowTest extends SparkSQLTestSuite
     assert( success )
   }
 
-  ignore("Asymmetric network") {
+  test("Asymmetric network") {
     val (success,net1) = CommunityDetectionTest(
-      sqlContext,
+      ss,
       "Nets/small-asym.net",
       new InfoFlow,
       Set( Row(1,1), Row(2,1), Row(3,3) ),
@@ -44,9 +44,9 @@ class InfoFlowTest extends SparkSQLTestSuite
     assert( success )
   }
 
-  ignore("Simple network") {
+  test("Simple network") {
     val (success,net1) = CommunityDetectionTest(
-      sqlContext,
+      ss,
       "Nets/simple.net",
       new InfoFlow,
       Set( Row(1,1), Row(2,1), Row(3,1), Row(4,4), Row(5,4), Row(6,4) ),
@@ -55,9 +55,9 @@ class InfoFlowTest extends SparkSQLTestSuite
     assert( success )
   }
 
-  ignore("Reproduce Rosvall and Bergstrom 2008 sample network") {
+  test("Reproduce Rosvall and Bergstrom 2008 sample network") {
     val (success,net1) = CommunityDetectionTest(
-      sqlContext,
+      ss,
       "Nets/rosvall.net",
       new InfoFlow,
       Set(
@@ -73,9 +73,9 @@ class InfoFlowTest extends SparkSQLTestSuite
     assert( success )
   }
 
-  ignore("Modularity test 1") {
+  test("Modularity test 1") {
     val (success,net1) = CommunityDetectionTest(
-      sqlContext,
+      ss,
       "Nets/infoflow-vs-modularity1.net",
       new InfoFlow,
       Set(
@@ -92,7 +92,7 @@ class InfoFlowTest extends SparkSQLTestSuite
 
   test("Modularity test 2") {
     val (success,net1) = CommunityDetectionTest(
-      sqlContext,
+      ss,
       "Nets/infoflow-vs-modularity2.net",
       new InfoFlow,
       Set(
