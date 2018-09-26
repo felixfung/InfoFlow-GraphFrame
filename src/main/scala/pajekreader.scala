@@ -14,7 +14,7 @@ import org.apache.spark.sql.functions._
 
 object PajekReader
 {
-  def apply( sqlc: SQLContext, filename: String ): GraphFrame = {
+  def apply( ss: SparkSession, filename: String ): GraphFrame = {
     try {
       // graph elements stored as local list
       // to be converted to DataFrame and stored in GrapheFrame
