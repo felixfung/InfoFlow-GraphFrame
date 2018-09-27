@@ -70,7 +70,10 @@ sealed class LogFile(
   else null
 
   def write( msg: String, debugging: Boolean )
-    = if( !pathLog.isEmpty && ( !debugging || debug ) ) logFile.append(msg)
+    = if( !pathLog.isEmpty && ( !debugging || debug ) ) {
+      logFile.append(msg)
+      logFile.flush
+    }
   def close = if( !pathLog.isEmpty ) logFile.close
 
   /***************************************************************************
