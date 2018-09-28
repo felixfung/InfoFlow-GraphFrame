@@ -1,6 +1,13 @@
 # InfoFlow
 An Apache Spark implementation of the InfoMap community detection algorithm
 
+__This is now abandoned.__
+
+__DataFrame does not perform well with iteration/recursion, at all. The
+execution plan gets very complicated quickly with each iteration, so
+that the computation on the driver core becomes the time
+limiting factor, resulting in ridiculously long runtime.__
+
 ## Theory
 
 This section provides the discrete maths that allow the InfoMap algorithm to be adapted onto Apache Spark, and the development of the parallel version, InfoFlow.
