@@ -62,7 +62,7 @@ object InfoFlowMain {
       .appName("InfoFlow")
       .master(config.master)
       .getOrCreate()
-    ss.sparkContext.setLogLevel("WARN")
+    //ss.sparkContext.setLogLevel("WARN")
     import ss.implicits._
 
   /***************************************************************************

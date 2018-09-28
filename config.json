@@ -1,7 +1,7 @@
 {
     "Master": "local[*]",
-    "Graph": "Nets/data/science2004/science2004.net",
-    "Algo": "InfoFlow",
+    "Graph": "wordnet3.parquet",
+    "Algo": "InfoMap",
     "tele": "0.15",
     "log": {
         "log path": "log.txt",

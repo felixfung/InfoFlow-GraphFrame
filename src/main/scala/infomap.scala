@@ -10,6 +10,8 @@ import org.apache.spark.sql._
 import org.graphframes._
 import org.apache.spark.sql.functions._
 
+import org.apache.spark.rdd.RDD
+
 sealed class InfoMap extends CommunityDetection
 {
   def apply( network: Network, graph: GraphFrame, logFile: LogFile ):
@@ -100,7 +102,8 @@ sealed class InfoMap extends CommunityDetection
             )
           }
           val new_qi_sum = qi_sum +q12 -q1 -q2
-          recursiveMerge( loop+1, newNetwork, newGraph, new_qi_sum, newEdgeList )
+          recursiveMerge( loop+1,
+            newNetwork, newGraph, new_qi_sum, newEdgeList )
         }
       }
     }
@@ -157,21 +160,35 @@ sealed class InfoMap extends CommunityDetection
    * find pair to merge according to greatest reduction in code length
    * and grab all associated quantities
    ***************************************************************************/
-      def findMerge( edgeList: DataFrame ) = {
-        val edge = edgeList
+      def findMerge( edgeList: DataFrame ):
+      (Long,Long,Int,Int,Double,Double,Double,Double,Double,Double,Double,Double) = {
+        val edge2 = edgeList
         // find minimum change in codelength
-        // if multiple merges has the same dL, grab the one with smallest src
         .groupBy("src").min("dL")
+        // if multiple merges has the same dL, grab the one with smallest src
         .orderBy("min(dL)","src")
         .limit(1)
+        // get all edge quantities
         .alias("select").join( edgeList.alias("b"),
           col("select.min(dL)")===col("b.dL")
           && col("select.src")===col("b.src")
         )
-        .select( col("b.src"), col("b.dst"), col("n1"), col("n2"),
+        .select(
+          col("b.src"), col("b.dst"), col("n1"), col("n2"),
           col("p1"), col("p2"), col("w1"), col("w2"), col("w1221"),
-          col("q1"), col("q2"), col("b.dL") )
-        .head
+          col("q1"), col("q2"), col("b.dL")
+        )
+        // extract column value from DataFrame
+        /*.cache
+        .rdd.collect
+        .map {
+          case Row(src:Long,dst:Long,n1:Int,n2:Int,p1:Double,p2:Double,
+            w1:Double,w2:Double,w1221:Double,q1:Double,q2:Double,dL:Double)
+          => (src,dst,n1,n2,p1,p2,w1,w2,w1221,q1,q2,dL)
+        }
+        .head*/
+        edge2.cache
+        val edge = edge2.head
         (
           edge.getLong(0),    // src
           edge.getLong(1),    // dst

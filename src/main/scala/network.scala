@@ -169,6 +169,13 @@ object Network
     df.cache
     df.rdd.localCheckpoint
     val count = df.rdd.count
-    //df.rdd.toDF
+    val spark: SparkSession =
+    SparkSession
+      .builder()
+      .appName("InfoFlow")
+      .config("spark.master", "local[*]")
+      .getOrCreate()
+    import spark.implicits._
+    df.rdd.toDF
   }
 }

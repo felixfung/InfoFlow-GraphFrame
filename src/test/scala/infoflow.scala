@@ -16,8 +16,8 @@ class InfoFlowTest extends SparkSQLTestSuite
       ss,
       "Nets/trivial.net",
       new InfoFlow,
-      Set( Row(1,1), Row(2,2) ),
-      1.45
+      Set( Row(1,1), Row(2,1) ),
+      0.93 //1.45
     )
     assert( success )
   }
@@ -83,9 +83,8 @@ class InfoFlowTest extends SparkSQLTestSuite
         Row(5,5), Row(6,5), Row(7,5), Row(8,5),
         Row(9,9), Row(10,9), Row(11,9), Row(12,9),
         Row(13,13), Row(14,13), Row(15,13), Row(16,13)
-        //Row(13,9), Row(14,9), Row(15,9), Row(16,9)
       ),
-    3.08 // 3.43
+    2.75 // 3.43
     )
     assert( success )
   }
@@ -100,10 +99,6 @@ class InfoFlowTest extends SparkSQLTestSuite
         Row(5,5), Row(6,5), Row(7,5), Row(8,5),
         Row(9,9), Row(10,9), Row(11,9), Row(12,9),
         Row(13,13), Row(14,13), Row(15,13), Row(16,13)
-        //Row(1,1), Row(2,1), Row(3,1), Row(4,1),
-        //Row(5,1), Row(6,1), Row(7,1), Row(8,1),
-        //Row(9,1), Row(10,1), Row(11,1), Row(12,1),
-        //Row(13,1), Row(14,1), Row(15,1), Row(16,1)
       ),
     2.72 // 2.68
     )
